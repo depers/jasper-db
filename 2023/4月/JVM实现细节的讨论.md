@@ -1,5 +1,3 @@
-# JVM实现细节的讨论
-
 > JVM/编程/Java
 
 > 这个简单介绍，Cron源自Unix/Linux系统自带的crond守护进程，以一个简洁的表达式定义任务触发时间。在Spring中，也可以使用Cron表达式来执行Cron任务，在Spring中。
