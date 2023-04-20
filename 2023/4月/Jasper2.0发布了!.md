@@ -29,3 +29,27 @@
 答案是会有的。
 
 我计划一年进行四个小版本更新，大版本的话除非有特别重大的功能上线，才会去做。这个站点的主要精力还是在站点内容的产出上。我会在后期发出2023年这个站点的开发路线图，到时请大家关注。源代码是开放的，代码和文档的维护我后面会做的越来越好，方便大家交流学习。
+
+# 感谢
+
+* 感谢[Material for MkDocs](https://squidfunk.github.io/mkdocs-material/)和[竹炉山房](https://synyan.cn/t)项目为我提供了前端UI设计的思路。
+* 感谢开源软件对Jasper2.0这个项目的支持，衷心感谢大家，世界因你们变得更好。
+    * 后端相关软件
+        1. [spring](https://spring.io/)
+        2. [httpclient](https://hc.apache.org/httpcomponents-client-5.2.x/)
+        3. [jackson](https://github.com/FasterXML/jackson)
+        4. [Apache commons-lang](https://commons.apache.org/proper/commons-lang/)
+        5. [MySql](https://www.mysql.com/cn/)
+        6. [Log4j2](https://logging.apache.org/log4j/2.x/)
+        7. [Mybatis](https://mybatis.org/mybatis-3/zh/index.html)
+        8. [PageHelper](https://pagehelper.github.io/)
+        9. [commonmark](https://github.com/commonmark/commonmark-java)
+        10. [Maven](https://maven.apache.org/)
+        11. [IDEA](https://www.jetbrains.com/zh-cn/idea/)
+    * 前端相关软件
+        1. [jQuery](https://jquery.com/)
+        2. [axios](https://www.axios-http.cn/)
+        3. [Marked](https://marked.js.org/)
+        4. [github-markdown-css](https://github.com/sindresorhus/github-markdown-css)
+        5. [loading animation](https://tobiasahlin.com/spinkit/)
+        6. [Nginx](https://nginx.org/en/)
