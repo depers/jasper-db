@@ -8,7 +8,7 @@
 
 在我开发blog的时候，我申请了[www.bravedawn.cn]()这个域名，其中bravedawn的意思其实就是brave和dawn两个单词拼接起来的，简单翻译过来就是"**勇敢的黎明**"。
 
-![网站备案照片](../../assert/网站备案.jpeg)
+![网站备案照片](/static/image/jasper2.0.jpeg)
 
 过去的事情已经过去了，所以今天我把blog称为Jasper1.0。其中Jasper是我起的项目代号，也是工程名，这个名字得益于我养的一盆花，这盆花叫做"碧玉"，我取了它的英文名。
 
