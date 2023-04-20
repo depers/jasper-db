@@ -4,7 +4,7 @@
 
 # Jasper1.0回顾
 
-时间过得好快，转眼都到了2023年，距离我大二（也就是2017年春学期）已经六年时光过去了。在2017年2月22日，那时的我十分喜爱[Python](https://www.python.org/)这门语言，满怀着对技术的渴望，我学习了[Flask](https://flask.palletsprojects.com/en/2.2.x/)和[Django](https://www.djangoproject.com/)这两个Web框架，在但是工作室同学的带动下，我使用Django开发了自己的博客系统，也就是[blog](https://github.com/depers/blog)。blog上线之后，我没有很好的继续去迭代它，在blog上面我也没有写很多的文章，只是简单的写了几篇简单的博客。到这里你也看到了，blog其实是我的一时热情，昙花一现的作品。
+时间过得好快，转眼都到了2023年，距离我大二（也就是2017年春学期）已经六年时光过去了。在2017年2月22日，那时的我十分喜爱[Python](https://www.python.org/)这门语言，满怀着对技术的渴望，我学习了[Flask](https://flask.palletsprojects.com/en/2.2.x/)和[Django](https://www.djangoproject.com/)这两个Web框架，在当时工作室同学的带动下，我使用Django开发了自己的博客系统，也就是[blog](https://github.com/depers/blog)。blog上线之后，我没有很好的继续去迭代它，在blog上面我也没有写很多的文章，只是简单的写了几篇简单的博客。到这里你也看到了，blog其实是我的一时热情，昙花一现的作品。
 
 在我开发blog的时候，我申请了[www.bravedawn.cn]()这个域名，其中bravedawn的意思其实就是brave和dawn两个单词拼接起来的，简单翻译过来就是"**勇敢的黎明**"。
 
