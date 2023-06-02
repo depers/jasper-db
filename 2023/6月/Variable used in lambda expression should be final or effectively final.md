@@ -157,7 +157,7 @@ public void workaroundMultithreading() {
 
 java.util.concurrent.atomic 包提供了诸如`AtomicReference` 和 `AtomicInteger`之类的类。 我们可以使用它们以原子方式修改 Lambda 表达式中的变量：
 
-我最近在开发过程中就遇到了一个问题，我需要在lamdba表达式中做一个计数的统计通过，其中我就使用了`AtomicInteger`这个类做的实现，代码如下图：
+我最近在开发过程中就遇到了一个问题，我需要在lamdba表达式中做一个计数的统计，其中我就使用了`AtomicInteger`这个类做的实现，代码如下图：
 
 ```java
 public static void main(String[] args) {
