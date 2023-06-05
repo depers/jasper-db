@@ -155,7 +155,7 @@ public void workaroundMultithreading() {
 
 通常在Lambda 表达式和匿名类中不建议使用局部变量，因为你不知道这些变量会在代码块中如何被使用，在多线程环境下可能会造成意想不到的情况。除了上面提到的方案外，有一种替代方法允许我们在这种情况下修改变量，通过原子性实现线程安全。
 
-java.util.concurrent.atomic 包提供了诸如`AtomicReference` 和 `AtomicInteger`之类的类。 我们可以使用它们以原子方式修改 Lambda 表达式中的变量：
+java.util.concurrent.atomic 包提供了诸如`AtomicReference` 和 `AtomicInteger`之类的类。 我们可以使用它们以原子方式修改 Lambda 表达式中的变量。
 
 我最近在开发过程中就遇到了一个问题，我需要在lamdba表达式中做一个计数的统计，其中我就使用了`AtomicInteger`这个类做的实现，代码如下图：
 
