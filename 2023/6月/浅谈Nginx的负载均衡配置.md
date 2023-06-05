@@ -4,7 +4,7 @@
 
 # 看脑图
 
-![Nginx的负载均衡配置](/assert/Nginx负载均衡配置.png)
+![Nginx负载均衡配置](/assert/Nginx负载均衡配置.png)
 
 # 负载均衡的概念
 
