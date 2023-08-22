@@ -6,7 +6,7 @@
 
 关于协变和逆变，请大家记住这个方法。
 
-![java.util.Collections#copy](/assert/Nginx负载均衡配置.png)
+![Java泛型的协变和逆变](/assert/assert/Java泛型的协变和逆变.png)
 
 # 变型(variant)
 
