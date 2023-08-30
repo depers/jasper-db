@@ -513,7 +513,7 @@ public class ClassExample<T> {
 
 ## Class类型与ParameterizedType类型的区别
 
-看了上面的例子大家就会发现，判断`User<String>`是`Class`类型还是`ParameterizedType`类型，这取决于`User`是接口还是类，如果是类的话`User<String>`就是`Class`类型，如果`User`是接口，则`User<String>`就是`ParameterizedType`类型。
+看了上面的例子大家就会发现，判断`User<String>`是`Class`类型还是`ParameterizedType`类型，这取决于`User`是接口还是**类**，如果是类的话`User<String>`就是`Class`类型，如果`User`是**接口**，则`User<String>`就是`ParameterizedType`类型。
 
 # 参考文章
 
