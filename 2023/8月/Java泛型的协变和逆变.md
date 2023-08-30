@@ -6,7 +6,7 @@
 
 关于协变和逆变，请大家记住这个方法。
 
-![Java泛型的协变和逆变](/assert/assert/Java泛型的协变和逆变.png)
+![Java泛型的协变和逆变](/assert/Java泛型的协变和逆变.png)
 
 # 变型(variant)
 
@@ -165,6 +165,8 @@ animalList.add(new Cat());  // 编译失败
     * `boolean add(E e); `
     * `boolean contains(Object o); `
     * `boolean remove(Object o);`
+
+    实验代码：
 
     ```java
     public static void main(String[] args) {
