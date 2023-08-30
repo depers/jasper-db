@@ -391,7 +391,7 @@ public class WildcardTypeExample {
 
 我们先来看看Java中对这个类的说明：
 
->Class 类的实例表示正在运行的 Java 应用程序中的类和接口。 枚举类和记录类都是类的一种； 注解也是是接口的一种； 每个数组也属于一个类，该类反映为由具有相同元素类型和维数的所有数组共享的 Class 对象。 原始 Java 类型（boolean、byte、char、short、int、long、float 和 double）和关键字 void 也表示为 Class 对象。
+Class 类的实例表示正在运行的 Java 应用程序中的类和接口。 枚举类和记录类都是类的一种； 注解也是是接口的一种； 每个数组也属于一个类，该类反映为由具有相同元素类型和维数的所有数组共享的 Class 对象。 原始 Java 类型（boolean、byte、char、short、int、long、float 和 double）和关键字 void 也表示为 Class 对象。
 
 在这个例子中，我发现了一个很重要的点，先看代码：
 
