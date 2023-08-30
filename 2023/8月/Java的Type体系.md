@@ -156,7 +156,7 @@ Java语言从Java5以后就引入**Type**体系，应该是为了加入泛型而
    上层类型：null
    ```
 
-5. 测试属性的参数化类型，这里我们以`ParameterizedTypeExample`的`entry`属性为例，值得注意的是`entry`参数是有上层类型的，因为这个参数在Map类型的声明是`interface Entry<K, V>`：
+5. 测试属性的参数化类型，这里我们以`ParameterizedTypeExample`的`entry`和`example`属性为例，值得注意的是`entry`参数是有上层类型的，因为这个参数在Map类型的声明是`interface Entry<K, V>`：
 
    ```java
    public static void main(String[] args) throws NoSuchMethodException, NoSuchFieldException {
@@ -204,16 +204,14 @@ Java语言从Java5以后就引入**Type**体系，应该是为了加入泛型而
    输出：
 
    ```
-   是否为参数化类型：true
-   实际类型是：class java.lang.String; class cn.bravedawn.reflection.type.parameterizedtype.ParameterizedTypeExample$Student; 
-   外层类型：interface java.util.Map
-   上层类型：null
-   -------------------------------
    属性的类型：java.util.Map$Entry<java.lang.String, java.lang.String>
    是否为参数化类型：true
    实际类型是：class java.lang.String; class java.lang.String; 
    外层类型：interface java.util.Map$Entry
    上层类型：interface java.util.Map
+   -------------------------------
+   属性的类型：class cn.bravedawn.reflection.type.parameterizedtype.ParameterizedTypeExample$ParameterizedTypeExample2
+   是否为参数化类型：false
    ```
 
 # TypeVariable
