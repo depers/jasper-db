@@ -36,7 +36,7 @@ Java语言从Java5以后就引入**Type**体系，应该是为了加入泛型而
 
 具体实践：
 
-1. 首先我们声明一个类`ParameterizedTypeExample`，我们可以看到这个类，声明了2个字段和1个方法：
+1. 首先我们声明一个类`ParameterizedTypeExample`，我们可以看到这个类，声明了3个字段和1个方法：
 
    ```java
    public class ParameterizedTypeExample<K, V> {
