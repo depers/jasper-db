@@ -72,7 +72,7 @@
     800	.
     ```
 
-2. `du -a`：将文件的容量也列出来。
+2. `du -a`：将当前目录的每一个文件的容量也列出来。
 
     ```shell
     depers@depersdeMacBook-Pro depers % du -a
@@ -86,7 +86,7 @@
     ...省略
     ```
 
-3. `du -h`：以人类可读的格式显示磁盘空间使用量。
+3. `du -h`：以人类可读的格式显示当前目录磁盘空间使用量。
 
     ```shell
     depers@depersdeMacBook-Pro depers % du -h
