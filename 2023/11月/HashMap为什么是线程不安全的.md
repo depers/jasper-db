@@ -188,7 +188,7 @@ final V putVal(int hash, K key, V value, boolean onlyIfAbsent,
     3. 此时线程A获得时间片，继续执行，将元素放到了下标为2的位置。因为线程A之前已经判断过是否发生Hash碰撞，所以这次是直接插入的。这就导致原来线程B放置到该下标2的数据被线程A给覆盖了，从而导致了线程不安全。
 
 
-2. 数据覆盖情况二
+2. **数据覆盖情况二**
 
    接着我们来看下一句代码：`if (++size > threshold)`
 
