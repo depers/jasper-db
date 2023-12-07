@@ -112,7 +112,10 @@ private final class HouseKeeper implements Runnable {
 
 ## 总结
 
-设置了idleTimeout后，每30ms会去清理超过空闲时间的连接。值得注意的是如果设置这个参数需要满足几个限制：1.idleTimeout必须大于0且小于maxLifetime，2.最小空闲连接数必须小于最大连接数，但是官方建议将这两个值设置为一样。
+设置了idleTimeout后，每30ms会去清理超过空闲时间的连接。值得注意的是如果设置这个参数需要满足几个限制：
+
+1. idleTimeout必须大于0且小于maxLifetime，这个HikariCP会做参数校验；
+2. 最小空闲连接数必须小于最大连接数，但是官方建议将这两个值设置为一样，所以这个参数**不建议设置**；
 
 # keepaliveTime
 
@@ -122,6 +125,7 @@ private final class HouseKeeper implements Runnable {
 
 ```java
 final long keepaliveTime = config.getKeepaliveTime();
+// 切记这里的前提是你设置了keepaliveTime
 if (keepaliveTime > 0) {
     // 心跳时间和保活时间的误差小于保活时间的10%，也就是心跳检查会在保活时间到期时去做
     // variance up to 10% of the heartbeat time
@@ -216,7 +220,10 @@ boolean isConnectionDead(final Connection connection) {
 
 ## 总结
 
-keepaliveTime这个参数的作用是保活空闲连接的，或是说检测空闲连接是否可用的。如果数据库驱动不支持JDBC4，这个参数需要和connectionTestQuery一起使用。
+keepaliveTime这个参数的作用是保活空闲连接的，或是说检测空闲连接是否可用的。如果数据库驱动不支持JDBC4，这个参数需要和connectionTestQuery一起使用。而基本上java MySQL驱动包5以上的版本都支持JDBC4，所以`connectionTestQuery`
+配置项，官方建议如果驱动支持JDBC4，不要设置此属性。
+
+这个参数默认是0，如果设置了，值不能大于等于maxLifetime或者是小于30ms，否则会被重置为0。这个参数我觉得是**需要设置的**，这样做也从一方面避免获取到被数据库已经关闭的连接，从而避免了业务出错。
 
 # maxLifetime
 
