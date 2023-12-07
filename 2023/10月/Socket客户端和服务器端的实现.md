@@ -77,7 +77,7 @@ public class Handler extends Thread{
             String s = reader.readLine();
             if (s.equals("bye")) {
                 writer.write("byte");
- 								writer.newLine(); // 调用此方法来终止输出行
+                writer.newLine(); // 调用此方法来终止输出行
                 writer.flush();
                 break;
             }
