@@ -20,17 +20,17 @@
 
 * 输出流
 
-    ![](/assert/OutputStream.png)
+    ![OutputStream](/assert/OutputStream.png)
 
 ### 按照字符流分类
 
 * 输入字符
 
-    ![](/assert/Reader.png)
+    ![Reader](/assert/Reader.png)
 
 * 输出字符
 
-    ![](/assert/Writer.png)
+    ![Writer](/assert/Writer.png)
 
 ### 按照功能分类
 
