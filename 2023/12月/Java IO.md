@@ -289,7 +289,7 @@ Java NIO的具体实现主要有三部分组成，分别是Selector选择器、C
 
 - 核心方法
 
-    - `flip()：`将limit设置为position，position设置为0。切换读写模式，此方法用于准备从缓冲区读取已经写入的数据，建议在`channel.write(buffer)`或是`buffer.get()`之前调用。
+    - `flip()`：将limit设置为position，position设置为0。切换读写模式，此方法用于准备从缓冲区读取已经写入的数据，建议在`channel.write(buffer)`或是`buffer.get()`之前调用。
 
 - 实践
 
