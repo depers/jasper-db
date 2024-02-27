@@ -24,9 +24,8 @@
         >
         > 示例：
         >
-        > ```ruby
-        > ruby
-        > 复制代码127.0.0.1:6379> set key value nx ex 10
+        > ```shell
+        > 127.0.0.1:6379> set key value nx ex 10
         > OK
         > ```
         >
