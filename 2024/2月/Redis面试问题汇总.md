@@ -2,7 +2,7 @@
 
 > 整理一些关于Redis的面试问题
 
-![](../../assert/Redis_Logo.svg)
+<img src="../../assert/Redis_Logo.svg" align=center/>
 
 1. 针对Redis中热点数据的缓存怎么处理？
 
