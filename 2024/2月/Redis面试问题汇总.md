@@ -2,7 +2,7 @@
 
 > 整理一些关于Redis的面试问题
 
-<img src="../../assert/Redis_Logo.svg" align=center/>
+<div align=center><img src="../../assert/Redis_Logo.svg" align=center/></div>
 
 1. 针对Redis中热点数据的缓存怎么处理？
 
@@ -67,7 +67,7 @@
     
     **Cache Aside 策略**，中文是叫旁路缓存策略。该策略又分为写策略和读策略。
     
-    ![](../../assert/旁路策略.webp)
+    <div align=center><img src="../../assert/旁路策略.webp" /></div>
     
     **写策略的步骤：**
     
