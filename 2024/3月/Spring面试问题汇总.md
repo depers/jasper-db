@@ -2,7 +2,7 @@
 
 > 最近在面试的过程中，面试官问了几个关于Spring的问题，我这边答得不是很好，这里记录一下。
 
-<img src="../../assert/og-spring.png" style="zoom: 50%;" />
+<div align=center><img src="../../assert/og-spring.png" style="zoom: 50%;" /></div>
 
 1. Spring中AOP无法增强的情况有哪些？该怎么解决？
 
@@ -19,15 +19,15 @@
 
     1. BeanA和BeanB相互循环依赖，如下图所示：
 
-        ![](../../assert/a和b相互依赖.webp)
+        <div align=center><img src="../../assert/a和b相互依赖.webp" /></div>
 
     2. BeanA和BeanC直接或间接循环依赖，如下如所示：
 
-        ![](../../assert/a和c间接依赖.webp)
+        <div align=center><img src="../../assert/a和c间接依赖.webp" /></div>
 
     3. 自己和自己形成循环依赖，如下图所示：
 
-        ![](../../assert/自己依赖自己.webp)
+        <div align=center><img src="../../assert/自己依赖自己.webp" /></div>
 
     **Spring是如何解决循环依赖问题的？**
 
