@@ -36,11 +36,11 @@ void transfer(Entry[] newTable, boolean rehash) {
 
 1. 假设有两个线程A、B，同时对HashMap进行扩容操作。当前HashMap中key值存储状态如下，蓝色的是桶（存储结构是数组）：
 
-   ![hashmap-1](/assert/hashmap-1.png)
+   ![hashmap-1](../../assert/hashmap-1.png)
 
 2. 正常情况下，上面这个结构扩容之后的结构如下图：
 
-   ![hashmap-2](/assert/hashmap-2.png)
+   ![hashmap-2](../../assert/hashmap-2.png)
 
 3. 此时线程A开始执行`transfer()`方法：e是key=3的元素，我们来执行这段代码：
 
@@ -59,7 +59,7 @@ void transfer(Entry[] newTable, boolean rehash) {
 
 4. 由于方法局部变量是堆栈封闭的，所以线程A的执行情况并不会影响线程B的执行。如果线程B顺利的完成了扩容操作，线程B中该hashmap的结构如下图：
 
-   ![hashmap-2](/assert/hashmap-2.png)
+   ![hashmap-2](../../assert/hashmap-2.png)
    
 5. 按照Java内存模型可知，线程B顺利完成扩容之后，Java会将工作内存的数据同步到主内存，此时在主内存中table（原来的桶数组）和newTable（扩容后的桶数组）都是第4步中的那个结构。也就是说key=7的元素next是key=3的元素，key=3的元素next是null。
    
@@ -72,7 +72,7 @@ void transfer(Entry[] newTable, boolean rehash) {
 
    这个循环执行之后的hashmap的结构如下图：
 
-   ![hashmap-3](/assert/hashmap-3.png)
+   ![hashmap-3](../../assert/hashmap-3.png)
 
 7. 此时接着执行下一个循环，e是key=7的元素，代码执行的步骤如下：
 
@@ -89,7 +89,7 @@ void transfer(Entry[] newTable, boolean rehash) {
    
    执行完上述的代码，此时HashMap的结构如下图：
    
-   ![hashmap-4](/assert/hashmap-4.png)
+   ![hashmap-4](../../assert/hashmap-4.png)
    
 8. 接下来，我们继续执行循环中的代码，此时e是key=3的元素：
    
@@ -106,7 +106,7 @@ void transfer(Entry[] newTable, boolean rehash) {
    
    执行完上述代码，此时HashMap的结构如下图：
    
-   ![hashmap-5](/assert/hashmap-5.png)
+   ![hashmap-5](../../assert/hashmap-5.png)
    
    因为`while(null != e)`，测试e=null，所以循环结束，线程A完成了扩容操作，会将工作内存的结构同步到主内存中，此时主内存中的newTable和table都会变成上面的结构。
    
@@ -206,6 +206,12 @@ final V putVal(int hash, K key, V value, boolean onlyIfAbsent,
    4. 然后线程A再次拿到CPU并继续执行(此时size的值仍为10)，当执行完put操作后，还是将size=11写回内存。
 
    5. 此时，线程A、B都执行了一次put操作，但是size的值只增加了1，所以说还是由于数据覆盖又导致了线程不安全。
+
+# HashMap容量为啥是2的幂次方
+
+如果 HashMap 的容量是 2 的幂次方，那么取模运算可以通过位运算来实现，例如使用&（按位与）操作。这种位运算的效率比除法运算高得多，可以大大提高 HashMap 的性能。
+
+我们⾸先可能会想到采⽤%取余的操作来实现。但是，重点来了：“取余(%)操作中如果除数是2的幂次，则等价于与其除数减⼀的与(&)操作（也就是说 hash%length==hash&(length-1)的前提是 length 是2的n 次⽅；）。” 并且 采⽤⼆进制位操作 &，相对于%能够提⾼运算效率，这就解释了 HashMap 的⻓度为什么是2的幂次⽅。
 
 # 参考文章
 
