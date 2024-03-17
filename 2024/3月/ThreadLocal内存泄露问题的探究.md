@@ -31,10 +31,13 @@ public static void main(String[] args) throws InterruptedException {
 * 若为强引用，会导致key指向的ThreadLocal对象和value指向的对象不能被GC回收，导致内存泄露。
 * 若为弱引用，大概率会被GC回收，减少内存泄露的问题。使用弱引用，可以使ThreadLocal对象在方法执行完毕之后顺利被回收，且Entry的key引用指向为null。
 
-![](../../assert/threadLocal-reference指向关系.svg)
+<div align=center><img src="../../assert/threadLocal-reference指向关系.svg" /></div>
 
 # 参考文章
 
 * [弱引用WeakReference作用与使用场景](https://blog.csdn.net/csdn_20150804/article/details/103748869)
+
 * [谈谈ThreadLocal为什么被设计为弱引用](https://zhuanlan.zhihu.com/p/304240519)
+
+    *[【尚硅谷】【JUC】109 ThreadLocal之为什么源码用弱引用](https://www.youtube.com/watch?v=ZaHpCpJ8AVA)
 
