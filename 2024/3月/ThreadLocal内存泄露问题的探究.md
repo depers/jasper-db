@@ -2,82 +2,36 @@
 
 > 最近发现使用ThreadLocal会导致内存泄露，写一篇文章对这个问题进行记录。
 
-# ThreadLocal会自己清除内存吗
-
-## 1. 第一个案例：同一个线程中对象不可达
-
-先看下面这段代码：
-
-```java
-public class ThreadLocalExample5 {
-    
-    public static void main(String[] args) throws InterruptedException {
-        Thread main = Thread.currentThread();
-		// 第一次执行ThreadLocal被强引用持有，不会回收
-        A a = getValue();
-        
-        // 第二次执行ThreadLocal被弱引用持有，会被回收
-        //getValue();
-
-        log.info("执行gc");
-        System.gc();
-        Thread.sleep(2000);
-
-        // 这一行打断点，查看main线程中threadLocals变量的属性
-        System.out.println(main);
-    }
-
-
-    private static A getValue() {
-        A a = new A();
-        System.out.println("value=" + a.get());
-        return a;
-    }
-
-
-    public static class A {
-        ThreadLocal<String> threadLocal = ThreadLocal.withInitial(() -> "字符串");
-        
-        public String get() {
-            return threadLocal.get();
-        }
-
-        public void set(String str) {
-            threadLocal.set(str);
-        }
-    }
-
-}
-
-```
-
-第一次执行ThreadLocal被强引用持有，不会回收，查看main线程中threadLocals变量的属性，如下图：
-
-![](../../assert/强引用持有没有被回收.png)
-
-第二次执行ThreadLocal被弱引用持有，会被回收，查看main线程中threadLocals变量的属性，如下图：
-
-![](../../assert/弱引用持有被回收.png)
-
-从上面的例子中我们可以看到上述代码中当对象A不再被使用时，换句话说在main方法中a对象是不可达的，JVM就会回收A，从而间接导致了Thread的ThreadLocalMap属性的key，也就是threalLocal被置为了null。
-
-## 2. 第二个案例：异步线程中自动被清理
-
-
-
 # ThreadLocal的结构
 
-ThreadLocal中有一个ThreadLocalMap的结构，每个线程都会将自己共享变量的副本保存到这个结构中，从而避免出现竞态条件。ThreadLocalMap的存储元素的结构是Entry，Entry继承了WeakReference，Entry结构的key是ThreadLocal本身，value则是Thread对象，这里ThreadLocal是真正的弱引用。
+`ThreadLocal`中有一个`ThreadLocalMap`的结构，每个线程都会将自己共享变量的副本保存到这个结构中，从而避免出现竞态条件。`ThreadLocalMap`的存储元素的结构是`Entry`，`Entry`继承了`WeakReference`，`Entry`结构的`key`是`ThreadLocal`本身，`value`则是`Thread`对象，这里`ThreadLocal`是真正的弱引用。
 
 ThreadLocal的引用链：**Thread -> ThreadLocal.ThreadLocalMap -> Entry[] -> Entry -> key（threadLocal对象）和value**
 
-## 1. 弱引用WeakReference
+# 弱引用WeakReference
 
 **弱引用的定义**：只具有弱引用的对象拥有更短暂的生命周期。在垃圾回收器线程扫描它所管辖的内存区域的过程中，一旦发现了只具有弱引用的对象，不管当前内存空间足够与否，都会回收它的内存。
-更简单的理解就是当垃圾回收时，该**对象**只被WeakReference对象的**弱引用字段（T reference）**所引用，所以**在没有被任何强类型的对象引用**时，该弱引用的对象就会被回收。
-**注意：WeakReference引用本身是强引用，它内部的（T reference）才是真正的弱引用字段，WeakReference就是一个装弱引用的容器而已。**
+更简单的理解就是当垃圾回收时，该**对象**只被`WeakReference`对象的**弱引用字段（`T reference`）**所引用，所以**在没有被任何强类型的对象引用**时，该弱引用的对象就会被回收。
+**注意：`WeakReference`引用本身是强引用，它内部的（`T reference`）才是真正的弱引用字段，`WeakReference`就是一个装弱引用的容器而已。**
 
+# ThreadLocal之为什么源码用弱引用
 
+首先我们来看一段代码，在这段代码中我将我的邮箱存储到了ThreadLocal中，并从中获取这个邮箱字符串：
+
+```java
+public static void main(String[] args) throws InterruptedException {
+    ThreadLocal<String> threadLocal = new ThreadLocal<>();
+    threadLocal.set("dev_fengxiao@163.com");
+    threadLocal.get();
+}
+```
+
+通过下面这幅图可以看到`threadLocal`变量在JVM内存中的存储指向关系，从下图中可以看到当`main`方法在执行完之后栈帧销毁，栈帧中`threadLocal`对象引用被销毁，指向堆中`ThreadLocal`的强引用也会被断开。`Thread`对象的`ThreadLocalMap.Entry`对象的`Key`（堆中`TheadLocal`对象）为强引用或者是弱引用会有什么区别呢？
+
+* 若为强引用，会导致key指向的ThreadLocal对象和value指向的对象不能被GC回收，导致内存泄露。
+* 若为弱引用，大概率会被GC回收，减少内存泄露的问题。使用弱引用，可以使ThreadLocal对象在方法执行完毕之后顺利被回收，且Entry的key引用指向为null。
+
+![](../../assert/threadLocal-reference指向关系.svg)
 
 # 参考文章
 
