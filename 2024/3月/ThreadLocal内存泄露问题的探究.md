@@ -50,9 +50,9 @@ public class RoleDTO {
     @Override
     public String toString() {
         return "RoleDTO{" +
-                "id=" + id +
-                ", name='" + name + '\'' +
-                '}';
+            "id=" + id +
+            ", name='" + name + '\'' +
+            '}';
     }
 }
 ```
@@ -93,7 +93,7 @@ public class WeakReferenceExample {
 
 ```java
 public class WeakReferenceExample2 {
-		public static void main(String[] args) throws InterruptedException {
+    public static void main(String[] args) throws InterruptedException {
         // 引用队列
         ReferenceQueue<RoleDTO> referenceQueue = new ReferenceQueue<>();
         WeakReference<RoleDTO> weakReference = new WeakReference<>(new RoleDTO(1l, "CFO"), referenceQueue);
@@ -183,7 +183,7 @@ private static void func() {
 
 <div align=center><img src="../../assert/第二个断点处的threadLocals.png" /></div>
 
-通过上面两张图片的对比，我们就可以看出之所以将`ThreadLocal`作为弱引用，是因为能够利用垃圾回收器能够及时回收弱引用内存空间的特性，达到了节省内存，避免发生内存泄露目的。
+通过上面两张图片的对比，我们就可以看出之所以将`ThreadLocal`作为弱引用，是因为能够利用垃圾回收器能够及时回收弱引用内存空间的特性，达到了节省内存，避免发生内存泄露的目的。
 
 # 参考文章
 
