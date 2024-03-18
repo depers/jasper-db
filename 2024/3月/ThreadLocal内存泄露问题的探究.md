@@ -185,6 +185,10 @@ private static void func() {
 
 通过上面两张图片的对比，我们就可以看出之所以将`ThreadLocal`作为弱引用，是因为能够利用垃圾回收器能够及时回收弱引用内存空间的特性，达到了节省内存，避免发生内存泄露的目的。
 
+# ThreadLocal使用了弱引用怎么还会内存泄露
+
+
+
 # 参考文章
 
 * [弱引用WeakReference作用与使用场景](https://blog.csdn.net/csdn_20150804/article/details/103748869)
