@@ -81,7 +81,6 @@
     } finally{
       lock.unlock();
     }
-    
     ```
 
 3. **释放了别人的锁**
