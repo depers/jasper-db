@@ -187,7 +187,194 @@ private static void func() {
 
 # ThreadLocal使用了弱引用怎么还会内存泄露
 
+这里我们先来看一个例子：
 
+```Java
+@Slf4j
+public class ThreadLocalExample5 {
+
+    // -Xms200m -Xmx200m
+    public static void main(String[] args) {
+
+        Executors.newSingleThreadExecutor().execute(() -> {
+            int i = 0;
+            while (true) {
+                try {
+                    func();
+
+                    // 当执行第10次的时候进行GC
+                    if (i % 10 == 0) {
+                        System.gc();
+                    }
+
+                    Thread t = Thread.currentThread();
+                    System.out.println(t); // 这里打断点
+                } catch (InterruptedException e) {
+                    log.error("异常", e);
+                }
+
+                i++;
+            }
+        });
+    }
+    
+    private static void func() throws InterruptedException {
+        // threadLocal作为局部变量
+        ThreadLocal<String> threadLocal = new ThreadLocal<>();
+        // 设置value值
+        threadLocal.set("helloWorld");
+    }
+}
+```
+
+上面的代码中我们使用一个线程去反复执行`func()`方法，当我们执行到第九次的时候我们就会发现如下图所示的情况：
+
+<div align="center"><img src="../../assert/执行func到第九次.png" /></div>
+
+此时我们发现当前线程的`threadLocals`中正好被塞入了9个`ThreadLocal`对象，这个里每一个对象都是我们之前执行`func()`方法保存到当前线程`threadLocals`中的对象。按照程序的逻辑，当执行到第10次的时候会手动进行GC，下图是GC之后的情况：
+
+![](../../assert/执行func到第十次.png)
+
+此时我们发现，经过GC之后原本作为key的`ThreadLocal`对象，由于是弱引用的关系导致内存空间被垃圾回收，置为了`null`。但是这里就浮现出来一个问题，既然`key`所占用的空间被垃圾回收了，那`value`占用的空间该怎么办，**如果我们一直添加数据到当前线程的`threadLocals`中肯定会导致内存泄露的**。
+
+我们接着执行我们刚才的程序，接着我们执行第11次添加`ThreadLocal`对象的操作，下面我们看下`ThreadLoal`的`set()`方法：
+
+```Java
+private void set(ThreadLocal<?> key, Object value) {
+
+    // table存储了我们之前添加到threadLocals的ThreadLocal.ThreadLocalMap.Entry对象
+    Entry[] tab = table;
+    int len = tab.length;
+    // 计算数组下标
+    int i = key.threadLocalHashCode & (len-1);
+
+    for (
+        // 获取该下标的对象
+        Entry e = tab[i]; 
+        // 对象不为空
+        e != null; 
+        // 获取数组中的下一个对象
+        e = tab[i = nextIndex(i, len)]) {
+        // 如果key值相同，也就是使用同一个ThreadLocal对象进行的set操作
+        if (e.refersTo(key)) {
+            e.value = value;
+            return;
+        }
+
+        // 如果key值为null
+        if (e.refersTo(null)) {
+            replaceStaleEntry(key, value, i);
+            return;
+        }
+    }
+
+    // 新放置一个对象到数组中
+    tab[i] = new Entry(key, value);
+    // 数组大小加1
+    int sz = ++size;
+    // 去除槽位
+    if (!cleanSomeSlots(i, sz) && sz >= threshold)
+        rehash();
+}
+```
+
+接下来我们着重看下cleanSomeSlots()方法的代码：
+
+```Java
+private boolean cleanSomeSlots(int i, int n) {
+    boolean removed = false;
+    Entry[] tab = table;
+    int len = tab.length;
+    do {
+        i = nextIndex(i, len);
+        Entry e = tab[i];
+        // 如果该位置对象不为null，且该Entry对象的key为null，此时就遇到了我们在第十次GC后referent为null的情况
+        if (e != null && e.refersTo(null)) {
+            n = len;
+            removed = true;
+            // 进行清除
+            i = expungeStaleEntry(i);
+        }
+    } while ( (n >>>= 1) != 0);
+    return removed;
+}
+```
+
+接着我们来看最核心的`expungeStaleEntry()`方法的代码，这个方法主要被用来清理`key`为`null`的脏`Entry`对象，这个方法会间接被`get()`、`set()`和`remove()`方法调用：
+
+```Java
+private int expungeStaleEntry(int staleSlot) {
+    Entry[] tab = table;
+    int len = tab.length;
+
+    // expunge entry at staleSlot
+    // 看这里就很重要，这里将value值置为了null，在这里剪断了Entry和value之间的引用关系，value的内存空间得以释放
+    tab[staleSlot].value = null;
+    tab[staleSlot] = null;
+    size--;
+
+    // Rehash until we encounter null
+    Entry e;
+    int i;
+    for (i = nextIndex(staleSlot, len);
+         (e = tab[i]) != null;
+         i = nextIndex(i, len)) {
+        ThreadLocal<?> k = e.get();
+        // 这里的也是将value置为null的逻辑
+        if (k == null) {
+            e.value = null;
+            tab[i] = null;
+            size--;
+        } else {
+            int h = k.threadLocalHashCode & (len - 1);
+            if (h != i) {
+                tab[i] = null;
+
+                // Unlike Knuth 6.4 Algorithm R, we must scan until
+                // null because multiple entries could have been stale.
+                while (tab[h] != null)
+                    h = nextIndex(h, len);
+                tab[h] = e;
+            }
+        }
+    }
+    return i;
+}
+```
+
+好了，看到这里大家应该就清楚了，`Entry`对象中`key`的内存回收依赖于GC，而`value`的回收则会发生在`ThreadLocal`的`set()`、`get()`和`remove()`等方法中。由于我们不清楚`set()`方法每次放入对象大小，如果如此累计且稍有不慎就会导致内存泄露。
+
+# 最佳实践
+
+1. 使用`ThreadLocal`一定要记得`remove()`。
+
+    ```java
+    objectThreadLocal.set(userInfo);
+    try {
+        // ...
+    } finally {
+        objectThreadLocal.remove();
+    }
+    ```
+
+2. 使用`ThreadLocal`一定要进行初始化，不然在`get()`或者`set()`的时候可能会到处空指针异常。
+
+    ```Java
+    private final static ThreadLocal<Long> requestHolder = ThreadLocal.withInitial(() -> 0L);
+    ```
+
+3. 使用ThreadLocal要用`private static`修饰，节省内存空间。
+
+    这个变量是针对一个线程内所有操作共享的，所以设置为静态变量，所有此类实例共享此静态变量，也就是说在类第一次被使用时装载，只分配一块存储空间，所有此类的对象（只要是这个线程内定义的）都可以操控这个变量。
+
+# 总结
+
+1. `ThreadLocal`并不解决线程间共享数据的问题。
+2. `ThreadLocal`适用于变量在线程间隔离且在方法间共享的场景。
+3. `ThreadLocal`通过隐式的在不同线程内创建独立的实例副本避免的实例的线程安全问题。
+4. 每个线程只有一个只属于自己的专属`Map`，并维护了`ThreadLocal`对象与具体实例的映射，该`Map`由于只被持有它的线程访问，故不存在线程安全及锁的问题。
+5. `ThreadLocal`的`Entry`对`ThreadLocal`的引用为弱引用，避免了`ThreadLocal`对象无法被回收的问题。
+6. `ThreadLocal`的`expungeStaleEntry()`解决了`Entry`中`value`值内存空间的回收问题。
 
 # 参考文章
 
