@@ -73,13 +73,13 @@
 
     ```java
     try {
-      if (lock.getLock()) {
-      // 业务逻辑
-    	}
+        if (lock.getLock()) {
+            // 业务逻辑
+        }
     } catch(Throwable e) {
-      // 处理异常
+        // 处理异常
     } finally{
-      lock.unlock();
+        lock.unlock();
     }
     ```
 
