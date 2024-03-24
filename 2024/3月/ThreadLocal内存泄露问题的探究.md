@@ -380,5 +380,7 @@ private int expungeStaleEntry(int staleSlot) {
 
 * [弱引用WeakReference作用与使用场景](https://blog.csdn.net/csdn_20150804/article/details/103748869)
 * [谈谈ThreadLocal为什么被设计为弱引用](https://zhuanlan.zhihu.com/p/304240519)
-* [【尚硅谷】【JUC】109 ThreadLocal之为什么源码用弱引用](https://www.youtube.com/watch?v=ZaHpCpJ8AVA)
-
+* [ThreadLocal之为什么源码用弱引用](https://www.youtube.com/watch?v=ZaHpCpJ8AVA)
+* [ThreadLocal之清除脏Entry](https://www.youtube.com/watch?v=gTOKqwb1H6A)
+* [ThreadLocal之小总结](https://www.youtube.com/watch?v=rtcSg6Bb7GE)
+* [阿里Java开发手册](https://developer.aliyun.com/special/tech-java)
