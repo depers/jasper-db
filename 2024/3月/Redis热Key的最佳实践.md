@@ -155,4 +155,4 @@ Redis中热键(Hot Key)是指在Redis数据库中被领繁访问的键。比如�
 
 * [7 REDIS WORST PRACTICES](https://redis.io/blog/7-redis-worst-practices/)
 
-    [Redis集群化方案对比：Codis、Twemproxy、Redis Cluster](http://kaito-kidd.com/2020/07/07/redis-cluster-codis-twemproxy/)
+* [Redis集群化方案对比：Codis、Twemproxy、Redis Cluster](http://kaito-kidd.com/2020/07/07/redis-cluster-codis-twemproxy/)
