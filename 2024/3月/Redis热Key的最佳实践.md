@@ -139,9 +139,35 @@ Redis中热键(Hot Key)是指在Redis数据库中被领繁访问的键。比如�
 
     <div align="center"><img src="../../assert/redis-monitor监控.png" /></div>
 
-    我们可以对`monitor`命令的输出数据进行分析，从而可以得到一段时间内热Key的统计数据。由Facebook开元的redis-faina就是解析monitor`命令的数据，生成Redis操作和Key的计数和计时的统计。
+    我们可以对`monitor`命令的输出数据进行分析，从而可以得到一段时间内热Key的统计数据。由Facebook开源的[redis-faina](https://github.com/facebookarchive/redis-faina)就是解析monitor`命令的数据，针对Redis操作和Key进行计数和计时的统计，从而我们可以很方便的找出热Key。
+
+    值得注意的是`monitor`命令的使用是有成本和危害的，`monitor`命令会将Redis服务器执行的命名全部进行输出，由于Redis服务器的QPS是很高的，所有就会有大量的数据被积攒到Redis服务器的输出缓存区，占用了大量的Redis内存。官方文档中也提到了这一点，在运行单个 `MONITOR` 客户端时可能会导致Redis服务端的吞吐量降低 50% 以上。运行更多的 `MONITOR` 客户端将进一步降低吞吐量。
 
 4. 服务器
+
+    Redis的客户端和服务端是通过建立TCP连接进行交互的，通讯协议使用的是RESP。从机器的角度来看Redis的通信，我们可以通过抓取Redis通信的TCP包，解析报文内容，从而得到Redis热Key的统计。
+
+    这种方式真正上做到了对Redis客户端和服务器的透明和无干扰，但是这需要我们进行额外的开发工作，目前开源的解决方案是ELK提供的Packetbeat插件，该插件实现了对MySQL、Redis等服务的数据包的抓包、分析、统计和展示。
+
+    由于是以机器为单位进行的统计，要了解整个集群服务的热Key还需要进行后期汇总。
+
+5. redis-cli的`--hotkeys`参数
+
+    
+
+
+
+## 总结
+
+结合上述四种方案，我们来总结下四种方案的优缺点：
+
+| 方案          | 优点 | 缺点 |
+| ------------- | ---- | ---- |
+| 客户端        |      |      |
+| 代理端        |      |      |
+| 服务端        |      |      |
+| 机器          |      |      |
+| --hotkeys参数 |      |      |
 
 # 热Key的解决方案
 
@@ -150,9 +176,12 @@ Redis中热键(Hot Key)是指在Redis数据库中被领繁访问的键。比如�
 # 参考资料
 
 * [《Redis开发与运维》付磊/张益军](https://book.douban.com/subject/26971561/)
-
 * [Understanding and Solving HotKey and BigKey issues in Redis](https://abhivendrasingh.medium.com/understanding-and-solving-hotkey-and-bigkey-and-issues-in-redis-1198f98b17a5)
-
 * [7 REDIS WORST PRACTICES](https://redis.io/blog/7-redis-worst-practices/)
-
 * [Redis集群化方案对比：Codis、Twemproxy、Redis Cluster](http://kaito-kidd.com/2020/07/07/redis-cluster-codis-twemproxy/)
+* [Redis 使用monitor造成的内存飙升](https://blog.csdn.net/qq_34556414/article/details/106201506)
+* [Redis官方文档-MONITOR](https://redis.io/docs/latest/commands/monitor/)
+* [redis的访问监控](https://www.cnblogs.com/heroinss/p/17674743.html)
+* [理解 Redis 的 RESP 协议](https://moelove.info/2017/03/05/%E7%90%86%E8%A7%A3-Redis-%E7%9A%84-RESP-%E5%8D%8F%E8%AE%AE/)
+* [Redis缓存热key问题常用解决方案](https://juejin.cn/post/7061568468537049124)
+* [发现并处理Redis的大Key和热Key](https://help.aliyun.com/zh/redis/user-guide/identify-and-handle-large-keys-and-hotkeys)
