@@ -129,7 +129,7 @@ Redis中热键(Hot Key)是指在Redis数据库中被领繁访问的键。比如�
 
     目前我们主流使用的都是Redis Cluster的解决方案，这是一种去中心化的集群方案，而Codis和Twemproxy则是中心化的解决方案。在解决热Key问题上，我们可以通过中心化的代理去做一些统计计数的工作，如下图所示：
 
-    <div align="center"><img src="../../assert/基于proxy的热key统计.png" /></div>
+    ![](../../assert/基于proxy的热key统计.png)
 
     这种方案和Redis的部署架构有关，所以关于这块的代码演示这里先不做演示了，后面用到的话再来补充。
 
@@ -137,7 +137,7 @@ Redis中热键(Hot Key)是指在Redis数据库中被领繁访问的键。比如�
 
     在Redis服务端我们可以通过`monitor`命令对Redis的所有操作进行监控，下图是我们使用`monitor`后控制台的部分输出：
 
-    <div align="center"><img src="../../assert/redis-monitor监控.png" /></div>
+    ![](../../assert/redis-monitor监控.png)
 
     我们可以对`monitor`命令的输出数据进行分析，从而可以得到一段时间内热Key的统计数据。由Facebook开源的[redis-faina](https://github.com/facebookarchive/redis-faina)就是解析monitor`命令的数据，针对Redis操作和Key进行计数和计时的统计，从而我们可以很方便的找出热Key。
 
