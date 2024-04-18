@@ -186,9 +186,58 @@ Redis中热键(Hot Key)是指在Redis数据库中被领繁访问的键。比如�
 
 # 热Key的解决方案
 
+## 方案一 节点扩容
+
+如果我们使用的是Redis Cluster架构，我们通过集群的水平扩容将原有节点的数据分散到新的节点上，从而到达降低原有节点压力的效果。
+
+## 方案二 本地缓存
+
+通过将热点Key保存到本地缓存中，因为数据就直接存储在应用服务器的内存中，所有性能上是远高于Redis的。在Java技术栈中可以用作本地缓存的工具有：
+
+* 根据HashMap自实现本地缓存
+* Guava Cache
+* Caffeine
+* Encache
+
+**使用本地缓存需要注意两个问题：**
+
+- 如果对热Key进行本地缓存，需要防止本地缓存过大，影响系统性能；
+- 需要处理本地缓存和Redis 集群数据的一致性问题。
+
+## 方案三 拆分热Key
+
+如果将热Key拆分成多个多个副本进行存储，这样就可以将热Key存储到不同的Redis节点上了，从而将这些热Key的读请求打散到不同的实例上，减轻单个节点的负载。
+
+具体的做法是：我们首先在更新缓存的一侧，将key拆成N份，这里的N可以是Redis节点的数量，比如一个key名字叫做`good:100`，那我们就可以把它拆成四份，**在原有Key的后面加一个后缀，可以根据自己的ip或是mac地址计算出一个hash值，然后与拆分Key的数量做一个取余操作，从而计算出需要在热Key后面拼接的后缀**，比如`good:100_copy1`、`good:100_copy2`、`good:100_copy3`、`good:100_copy4`，每次更新时都需要去改动这N个key。
+
+大概得实现思路，用下面的伪代码做下实现：
+
+```Java
+// N是Redis节点的数量，生成随机后缀（根据ip或是Mac地址）
+suffix = GenSuffixFromIp(N)
+// 构造备份新 Key
+bakHotKey = hotKey + "_" + suffix
+// 先从备份的key中获取数据
+data = redis.GET(bakHotKey)
+if data == NULL {
+    // 如果备份的key不存在
+    data = redis.GET(hotKey)
+    if data == NULL {
+        data = GetFromDB()
+        // 可以利用原子锁来写入数据保证数据一致性
+        redis.SET(hotKey, data, expireTime)
+        redis.SET(bakHotKey, data, expireTime + GenRandom(0, 5))
+    } else {
+        redis.SET(bakHotKey, data, expireTime + GenRandom(0, 5))
+    }
+}
+```
+
+在这段代码中，通过Ip和节点的数量计算后缀，得到一个 `bakHotKey`，程序会优先访问 `bakHotKey`，在得不到数据的情况下，再访问原来的 `hotkey`，并将 `hotkey` 的内容写回 `bakHotKey`。值得注意的是，`bakHotKey` 的过期时间是 `hotkey` 的过期时间加上一个较小的随机正整数，这是通过坡度过期的方式，保证在 `hotkey` 过期时，所有 `bakHotKey` 不会同时过期而造成缓存雪崩。
+
 # 热Key的重建优化
 
-
+热Key的更新这里也存在一定的问题，这里其实不仅仅是热key
 
 # 参考资料
 
