@@ -237,7 +237,7 @@ if data == NULL {
 
 # 热Key的重建优化
 
-热Key的更新这里也存在一定的问题，这里其实不仅仅是热key
+关于热点数据的更新，我在之前的文章中就写过相关的内容，这里就不做赘述了，具体的文章：[Redis面试问题汇总](http://www.bravedawn.cn/details.html?aid=8488)。
 
 # 参考资料
 
