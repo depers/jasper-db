@@ -24,6 +24,8 @@ MyBatis配置
 
 RabbitMQ配置
 
+如何动态选择mapper进行执行
+
 # 用户认证鉴权
 
 基于Session
