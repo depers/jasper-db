@@ -63,7 +63,9 @@
 
     **问题描述**：就是说我们不能先set key，然后再对key进行expire，这里存在并发问题。
 
-    **解决办法**：采用`set <key> <value> EX <exipreTime> NX` ，一条执行语句去做。
+    **解决办法**：采用`set <key> <value> EX <exipreTime> NX` ，一条执行语句去做。其中：
+
+    * 在 Redis 中，`SETNX` 是一个命令，它的含义是 "Set if Not eXists"，即 "如果不存在则设置"。
 
 2. **忘记释放锁**
 
