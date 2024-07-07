@@ -1,6 +1,6 @@
 | title                       | tags                    | background                                                   | auther | isSlow |
 | --------------------------- | ----------------------- | ------------------------------------------------------------ | ------ | ------ |
-| Redission看门狗的原理与实践 | 分布式锁/Redisson/Redis | 今天在晚上看了一篇博客，博客上讲了关于使用Redisson分布式锁的一些技巧，这里我发现了一个在日常开发中一直没有解决的问题，那就是分布式锁的有效期该如何设置，之前我们都是测试这个方法大概有多长时间，然后根据这个时间再尽量将这个分布式锁的有效时间设置长一些，生产上好像也没出啥问题，其实这样设置是有问题的。 | depers | true   |
+| Redission看门狗的原理与实践 | 分布式锁/Redisson/Redis | 今天看到一篇博客，博客上讲了关于使用Redisson分布式锁的一些技巧，这里我发现了一个在日常开发中一直没有解决的问题，那就是分布式锁的有效期该如何设置，之前我们都是测试这个方法大概有多长时间，然后根据这个时间再尽量将这个分布式锁的有效时间设置长一些，生产上好像也没出啥问题，其实这样设置是有问题的。 | depers | true   |
 
 # 实验一：如果不设置锁的有效时间且不释放锁会怎么样
 
@@ -168,7 +168,93 @@ public class RedissonLock2 {
     }
     ```
 
+2. 接着我们看下`unlockInnerAsync()`方法的实现，具体的实现是：`org.redisson.RedissonLock#unlockInnerAsync`：
+
+    ```Java
+    protected RFuture<Boolean> unlockInnerAsync(long threadId) {
+        return evalWriteAsync(getRawName(), LongCodec.INSTANCE, RedisCommands.EVAL_BOOLEAN,
+              "if (redis.call('hexists', KEYS[1], ARGV[3]) == 0) then " +
+                        "return nil;" +
+                    "end; " +
+                    "local counter = redis.call('hincrby', KEYS[1], ARGV[3], -1); " +
+                    "if (counter > 0) then " +
+                        "redis.call('pexpire', KEYS[1], ARGV[2]); " +
+                        "return 0; " +
+                    "else " +
+                        "redis.call('del', KEYS[1]); " +
+                        "redis.call('publish', KEYS[2], ARGV[1]); " +
+                        "return 1; " +
+                    "end; " +
+                    "return nil;",
+                Arrays.asList(getRawName(), getChannelName()), LockPubSub.UNLOCK_MESSAGE, internalLockLeaseTime, getLockName(threadId));
+    }
+    ```
+
+    * 传入的参数`threadId`，线程id
+    * `getRawName()`：锁的名称，也就是`redisson:lock`
+    * `LongCodec.INSTANCE`：Long类型的编解码器
+    * `RedisCommands.EVAL_BOOLEAN`：脚本执行的结果装换器、
+    * 脚本内容解析
+        * 变量
+            * `KEYS[1]`：`getRawName()`，锁的名称，，也就是`redisson:lock`，也就是Hash结构的key
+            * `KEYS[2]`：`getChannelName()`，连接的名称
+            * `ARGV[1]`：`LockPubSub.UNLOCK_MESSAGE`，Long类型的变量，值为0
+            * `ARGV[2]`：`internalLockLeaseTime`，锁的有效时间，
+            * `ARGV[3]`：`getLockName(threadId)`，锁在redis Hash结构中的field字段，例如：`56f3b6f6-74ae-4990-9628-95d505cc1d06:53`
+        * 语句解析：
+            * `'hexists', KEYS[1], ARGV[3]) == 0`：在redis中这个key的field存在吗，如果不存在，则返回nil
+            * `'hincrby', KEYS[1], ARGV[3], -1`：将这个key的field的值减一
+        * 算法描述
+            * 先判断这个锁在redis中是否存在，如果不存在直接返回false
+            * 接着将锁的值减一
+            * 如果执行成功了，就给锁延期，而且返回0，最后返回false
+            * 如果执行失败了，就删除这个锁的key，并向频道KEYS[2]发布消息，最后返回1，最后返回true
+
+3. 接着我们来看真正执行lua脚本的这段代码，我们来到了：`org.redisson.RedissonBaseLock#evalWriteAsync`，从名字上来看，这段代码是异步执行的，下面我们一行一行的来分析下:
+
+    ```Java
+    protected <T> RFuture<T> evalWriteAsync(String key, Codec codec, RedisCommand<T> evalCommandType, String script, List<Object> keys, Object... params) {
+        MasterSlaveEntry entry = commandExecutor.getConnectionManager().getEntry(getRawName());
     
+        CompletionStage<Map<String, String>> replicationFuture = CompletableFuture.completedFuture(Collections.emptyMap());
+        if (!(commandExecutor instanceof CommandBatchService) && entry != null && entry.getAvailableSlaves() > 0) {
+            replicationFuture = commandExecutor.writeAsync(entry, null, RedisCommands.INFO_REPLICATION);
+        }
+        CompletionStage<T> resFuture = replicationFuture.thenCompose(r -> {
+            Integer availableSlaves = Integer.valueOf(r.getOrDefault("connected_slaves", "0"));
+    
+            CommandBatchService executorService = createCommandBatchService(availableSlaves);
+            RFuture<T> result = executorService.evalWriteAsync(key, codec, evalCommandType, script, keys, params);
+            if (commandExecutor instanceof CommandBatchService) {
+                return result;
+            }
+    
+            RFuture<BatchResult<?>> future = executorService.executeAsync();
+            CompletionStage<T> f = future.handle((res, ex) -> {
+                if (ex != null) {
+                    throw new CompletionException(ex);
+                }
+                if (commandExecutor.getConnectionManager().getCfg().isCheckLockSyncedSlaves()
+                        && res.getSyncedSlaves() == 0 && availableSlaves > 0) {
+                    throw new CompletionException(
+                            new IllegalStateException("None of slaves were synced"));
+                }
+    
+                return commandExecutor.getNow(result.toCompletableFuture());
+            });
+            return f;
+        });
+        return new CompletableFutureWrapper<>(resFuture);
+    }
+    ```
+
+    不得不承认，这段代码看着有点唬人，但是不要怕，我们一行一行走一下。
+
+    首先这个方法的参数我就不再介绍了，上面`unlockInnerAsync()`方法已经介绍过了。
+
+    * commandExecutor
+
+        
 
 # 参考文章
 
