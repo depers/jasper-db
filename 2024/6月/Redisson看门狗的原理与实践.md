@@ -54,7 +54,7 @@ public class RedissonLock {
 }
 ```
 
-在上面这段代码中，在`testLockWatchDog()`方法中，新建了一个线程申请了`redisson:lock`，接着线程睡眠40s（假设在执行逻辑），**这里比较重要的是我即没有设置有效时间也没有显式的释放锁，所以得到的效果就是看门狗线程会不断的给这个锁进行延时，按照默认的配置，看门狗每次延时30s，每10s进行一次延时操作，所以在开发过程中一定要手动的释放锁，否则会出生产问题。**样例代码如下：
+在上面这段代码中，在`testLockWatchDog()`方法中，新建了一个线程申请了`redisson:lock`，接着线程睡眠40s（假设在执行逻辑），**这里比较重要的是我即没有设置有效时间也没有显式的释放锁，所以得到的效果就是看门狗线程会不断的给这个锁进行延时，按照默认的配置，看门狗每次延时30s，每10s进行一次延时操作，锁在Redis中一直存在，后续的线程就无法再获取到这个锁。所以在开发过程中一定要手动的释放锁，否则会出生产问题。**样例代码如下：
 
 ```Java
 // 这里第一个参数等待时间，第二个参数时间单位
@@ -191,10 +191,15 @@ public class RedissonLock2 {
     ```
 
     * 传入的参数`threadId`，线程id
+
     * `getRawName()`：锁的名称，也就是`redisson:lock`
+
     * `LongCodec.INSTANCE`：Long类型的编解码器
+
     * `RedisCommands.EVAL_BOOLEAN`：脚本执行的结果装换器、
+
     * 脚本内容解析
+
         * 变量
             * `KEYS[1]`：`getRawName()`，锁的名称，，也就是`redisson:lock`，也就是Hash结构的key
             * `KEYS[2]`：`getChannelName()`，连接的名称
@@ -205,61 +210,90 @@ public class RedissonLock2 {
             * `'hexists', KEYS[1], ARGV[3]) == 0`：在redis中这个key的field存在吗，如果不存在，则返回nil
             * `'hincrby', KEYS[1], ARGV[3], -1`：将这个key的field的值减一
         * 算法描述
-            * 先判断这个锁在redis中是否存在，如果不存在直接返回false
-            * 接着将锁的值减一
+            * 先判断这个锁在redis中是否存在，如果不存在直接返回`nil`
+            * 接着将锁的值减一（值得注意的是在获取到锁之后，这个锁的值是1）
             * 如果执行成功了，就给锁延期，而且返回0，最后返回false
             * 如果执行失败了，就删除这个锁的key，并向频道KEYS[2]发布消息，最后返回1，最后返回true
 
-3. 接着我们来看真正执行lua脚本的这段代码，我们来到了：`org.redisson.RedissonBaseLock#evalWriteAsync`，从名字上来看，这段代码是异步执行的，下面我们一行一行的来分析下:
+    * 这段程序在目前这种情况的的执行结果
 
-    ```Java
-    protected <T> RFuture<T> evalWriteAsync(String key, Codec codec, RedisCommand<T> evalCommandType, String script, List<Object> keys, Object... params) {
-        MasterSlaveEntry entry = commandExecutor.getConnectionManager().getEntry(getRawName());
-    
-        CompletionStage<Map<String, String>> replicationFuture = CompletableFuture.completedFuture(Collections.emptyMap());
-        if (!(commandExecutor instanceof CommandBatchService) && entry != null && entry.getAvailableSlaves() > 0) {
-            replicationFuture = commandExecutor.writeAsync(entry, null, RedisCommands.INFO_REPLICATION);
-        }
-        CompletionStage<T> resFuture = replicationFuture.thenCompose(r -> {
-            Integer availableSlaves = Integer.valueOf(r.getOrDefault("connected_slaves", "0"));
-    
-            CommandBatchService executorService = createCommandBatchService(availableSlaves);
-            RFuture<T> result = executorService.evalWriteAsync(key, codec, evalCommandType, script, keys, params);
-            if (commandExecutor instanceof CommandBatchService) {
-                return result;
-            }
-    
-            RFuture<BatchResult<?>> future = executorService.executeAsync();
-            CompletionStage<T> f = future.handle((res, ex) -> {
-                if (ex != null) {
-                    throw new CompletionException(ex);
-                }
-                if (commandExecutor.getConnectionManager().getCfg().isCheckLockSyncedSlaves()
-                        && res.getSyncedSlaves() == 0 && availableSlaves > 0) {
-                    throw new CompletionException(
-                            new IllegalStateException("None of slaves were synced"));
-                }
-    
-                return commandExecutor.getNow(result.toCompletableFuture());
-            });
-            return f;
-        });
-        return new CompletableFutureWrapper<>(resFuture);
+        目前Redis中存储这两个相同key的锁，按照上面代码的执行”先判断这个锁在redis中是否存在，如果不存在直接返回nil“，也就是说这个锁已经过期了。
+
+3. 后续的代码这里就不再跟踪了，这里说下结论，**如果设置的锁的有效时间小于被锁包含的逻辑的执行时间，那么设置锁的意义就不存在了。因为一旦锁过期，其他的线程就会立马获取到锁，从而导致数据的一致性遭到破坏。**
+
+# 实验三：完全依赖看门狗来对锁进行延时，正确的获取和关闭锁
+
+通过上面的两个实验，我们发现要想正确的使用Redisson提供的分布式锁功能，一是要正确的获取和释放锁，二是不要设置锁的有效时间，应该依赖看门狗机制帮我们去锁的延时。
+
+为了完善实验，这里我们也写一段程序来演示这个结论。
+
+```Java
+@Slf4j
+public class RedissonLock3 {
+
+    private static RedissonClient redissonClient;
+    private static final String LOCK_NAME = "redisson:lock";
+
+    static {
+        Config config = new Config();
+        config.setCodec(new JsonJacksonCodec());
+        config.useSingleServer().setAddress("redis://127.0.0.1:6379");
+        redissonClient = Redisson.create(config);
     }
-    ```
 
-    不得不承认，这段代码看着有点唬人，但是不要怕，我们一行一行走一下。
 
-    首先这个方法的参数我就不再介绍了，上面`unlockInnerAsync()`方法已经介绍过了。
+    public static void main(String[] args) throws InterruptedException {
+        Runnable watchDog = testLockWatchDog();
 
-    * commandExecutor
+        new Thread(watchDog).start();
+        new Thread(watchDog).start();
+    }
 
-        
+
+    private static Runnable testLockWatchDog() throws InterruptedException {
+        return new Runnable() {
+            @Override
+            public void run() {
+                RLock lock = redissonClient.getLock(LOCK_NAME);
+                boolean res = false;
+                try {
+                    // 这里设置了等待时间，也可以不设置
+                    res = lock.tryLock(6, TimeUnit.SECONDS);
+                    if (res) {
+                        try {
+                            log.info("成功获取到锁, lockName={}", lock.getName());
+                            Thread.sleep(5000L);
+                            log.info("方法执行结束, lockName={}", lock.getName());
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        } finally {
+                            lock.unlock();
+                            log.info("锁已释放");
+                        }
+                    } else {
+                        log.info("获取锁失败");
+                    }
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+
+        };
+    }
+}
+```
+
+看下控制台的输出：
+
+![](../../assert/依赖看门狗进行锁的有效时间的延长.png)
+
+# 看门狗机制的源码解析
+
+未完待续~
 
 # 参考文章
 
 * [Redisson的看门狗机制](https://www.jianshu.com/p/1a7636b69e02)
-
 * [HashedWheelTimer 使用及源码分析](https://javadoop.com/post/HashedWheelTimer)
 * [SpringBoot定时任务 - Netty HashedWheelTimer方式](https://pdai.tech/md/spring/springboot/springboot-x-task-hashwheeltimer-timer.html)
 * [HashedWheelTimer时间轮原理分析](https://albenw.github.io/posts/ec8df8c/)
