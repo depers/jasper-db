@@ -300,5 +300,6 @@ public class RedissonLock3 {
 * [SpringBoot定时任务 - Netty HashedWheelTimer方式](https://pdai.tech/md/spring/springboot/springboot-x-task-hashwheeltimer-timer.html)
 * [HashedWheelTimer时间轮原理分析](https://albenw.github.io/posts/ec8df8c/)
 * [Redisson源码解读-分布式锁](https://www.javaedit.com/archives/164)
-
 * [Redisson 源码解析](https://juejin.cn/post/6901951315962757134)
+* [源码解析之Redisson](https://nageoffer.com/sourcecode/redisson/#reentrantlock-%E9%87%8D%E5%85%A5%E9%94%81)
+* [Redisson源码解读-分布式锁](https://www.javaedit.com/archives/164)
