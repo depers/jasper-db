@@ -291,7 +291,141 @@ public class RedissonLock3 {
 
 # Redisson分布式锁的源码解析
 
-未完待续~
+针对这块内容，我们对应到我们使用锁的几个步骤：第一个是获取锁，第二个是释放锁，第三个是看门狗。下面我们通过简单的分析代码逻辑和大脚讨论下这三个点：
+
+## 第一步：尝试获取锁
+
+```Java
+@Override
+public boolean tryLock(long waitTime, long leaseTime, TimeUnit unit) throws InterruptedException {
+    long time = unit.toMillis(waitTime);
+    long current = System.currentTimeMillis();
+    long threadId = Thread.currentThread().getId();
+    Long ttl = tryAcquire(waitTime, leaseTime, unit, threadId);
+    // 加锁成功
+    if (ttl == null) {
+        return true;
+    }
+
+    // 判断是否超时，如果超时则返回加锁失败
+    time -= System.currentTimeMillis() - current;
+    if (time <= 0) {
+        acquireFailed(waitTime, unit, threadId);
+        return false;
+    }
+
+    current = System.currentTimeMillis();
+    // 订阅加锁事件
+    CompletableFuture<RedissonLockEntry> subscribeFuture = subscribe(threadId);
+    try {
+        // 订阅等待
+        subscribeFuture.get(time, TimeUnit.MILLISECONDS);
+    } catch (TimeoutException e) {
+        if (!subscribeFuture.completeExceptionally(new RedisTimeoutException(
+                "Unable to acquire subscription lock after " + time + "ms. " +
+                        "Try to increase 'subscriptionsPerConnection' and/or 'subscriptionConnectionPoolSize' parameters."))) {
+            subscribeFuture.whenComplete((res, ex) -> {
+                if (ex == null) {
+                    unsubscribe(res, threadId);
+                }
+            });
+        }
+        acquireFailed(waitTime, unit, threadId);
+        return false;
+    } catch (ExecutionException e) {
+        acquireFailed(waitTime, unit, threadId);
+        return false;
+    }
+
+    try {
+        // 计算是否超时
+        time -= System.currentTimeMillis() - current;
+        if (time <= 0) {
+            acquireFailed(waitTime, unit, threadId);
+            return false;
+        }
+
+        // 阻塞线程进行等待
+        while (true) {
+            long currentTime = System.currentTimeMillis();
+            // 再次尝试获取锁
+            ttl = tryAcquire(waitTime, leaseTime, unit, threadId);
+            // 获取锁成功
+            if (ttl == null) {
+                return true;
+            }
+
+            time -= System.currentTimeMillis() - currentTime;
+            if (time <= 0) {
+                acquireFailed(waitTime, unit, threadId);
+                return false;
+            }
+
+            // 此时上一个锁的有效时间还是大于0且小于等待时间，
+            currentTime = System.currentTimeMillis();
+            if (ttl >= 0 && ttl < time) {
+                // 等待ttl时间获取订阅的消息
+                commandExecutor.getNow(subscribeFuture).getLatch().tryAcquire(ttl, TimeUnit.MILLISECONDS);
+            } else {
+                // 等待time时间获取订阅的消息
+                commandExecutor.getNow(subscribeFuture).getLatch().tryAcquire(time, TimeUnit.MILLISECONDS);
+            }
+
+            // 计算是否超时
+            time -= System.currentTimeMillis() - currentTime;
+            if (time <= 0) {
+                acquireFailed(waitTime, unit, threadId);
+                return false;
+            }
+        }
+    } finally {
+        // 解除订阅
+        unsubscribe(commandExecutor.getNow(subscribeFuture), threadId);
+    }
+}
+```
+
+这里关键的三部分代码：
+
+1. 第一次尝试获取锁
+2. 订阅锁消息
+3. 阻塞并等待获取订阅的消息，再次尝试获取锁
+
+这里我用网上找的一张图来串下这个流程
+
+![](../../assert/获取锁的流程.png)
+
+## 第二步：获取锁
+
+```Java
+private <T> RFuture<Long> tryAcquireAsync(long waitTime, long leaseTime, TimeUnit unit, long threadId) {
+    RFuture<Long> ttlRemainingFuture;
+    // 判断锁是否有有效时间
+    if (leaseTime > 0) {
+        // 按有效时间进行加锁
+        ttlRemainingFuture = tryLockInnerAsync(waitTime, leaseTime, unit, threadId, RedisCommands.EVAL_LONG);
+    } else {
+        // 按看门狗时间进行加锁，默认看门狗时间是30秒
+        ttlRemainingFuture = tryLockInnerAsync(waitTime, internalLockLeaseTime,
+                TimeUnit.MILLISECONDS, threadId, RedisCommands.EVAL_LONG);
+    }
+    CompletionStage<Long> f = ttlRemainingFuture.thenApply(ttlRemaining -> {
+        // 加锁成功
+        if (ttlRemaining == null) {
+            if (leaseTime > 0) {
+                internalLockLeaseTime = unit.toMillis(leaseTime);
+            } else {
+                // 如果没有有效时间，设置看门狗逻辑
+                scheduleExpirationRenewal(threadId);
+            }
+        }
+        return ttlRemaining;
+    });
+    return new CompletableFutureWrapper<>(f);
+}
+```
+
+这里我们继续深入，看下`scheduleExpirationRenewal(threadId)`的具体逻辑。
 
 # 参考文章
 
