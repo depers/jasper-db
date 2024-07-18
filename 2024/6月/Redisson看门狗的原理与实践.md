@@ -207,7 +207,7 @@ public class RedissonLock2 {
             * `KEYS[2]`：`getChannelName()`，连接的名称
             * `ARGV[1]`：`LockPubSub.UNLOCK_MESSAGE`，Long类型的变量，值为0
             * `ARGV[2]`：`internalLockLeaseTime`，锁的有效时间，
-            * `ARGV[3]`：`getLockName(threadId)`，锁在redis Hash结构中的field字段，例如：`56f3b6f6-74ae-4990-9628-95d505cc1d06:53`
+            * `ARGV[3]`：`getLockName(threadId)`，锁在redis Hash结构中的field字段，例如：`56f3b6f6-74ae-4990-9628-95d505cc1d06:53`，其实就是UUID+线程ID
         * 语句解析：
             * `'hexists', KEYS[1], ARGV[3]) == 0`：在redis中这个key的field存在吗，如果不存在，则返回nil
             * `'hincrby', KEYS[1], ARGV[3], -1`：将这个key的field的值减一
@@ -407,15 +407,16 @@ private <T> RFuture<Long> tryAcquireAsync(long waitTime, long leaseTime, TimeUni
     } else {
         // 按看门狗时间进行加锁，默认看门狗时间是30秒
         ttlRemainingFuture = tryLockInnerAsync(waitTime, internalLockLeaseTime,
-                TimeUnit.MILLISECONDS, threadId, RedisCommands.EVAL_LONG);
+                                               TimeUnit.MILLISECONDS, threadId, RedisCommands.EVAL_LONG);
     }
     CompletionStage<Long> f = ttlRemainingFuture.thenApply(ttlRemaining -> {
-        // 加锁成功
+        // 返回为null表示加锁成功
         if (ttlRemaining == null) {
+            // 有效时间存在
             if (leaseTime > 0) {
                 internalLockLeaseTime = unit.toMillis(leaseTime);
             } else {
-                // 如果没有有效时间，设置看门狗逻辑
+                // 如果没有有效时间，启动看门狗，定时给锁续期，防止业务逻辑未执行完成锁就过期了
                 scheduleExpirationRenewal(threadId);
             }
         }
@@ -425,7 +426,61 @@ private <T> RFuture<Long> tryAcquireAsync(long waitTime, long leaseTime, TimeUni
 }
 ```
 
-这里我们继续深入，看下`scheduleExpirationRenewal(threadId)`的具体逻辑。
+首先，我们来看下获取锁的逻辑：
+
+```Java
+<T> RFuture<T> tryLockInnerAsync(long waitTime, long leaseTime, TimeUnit unit, long threadId, RedisStrictCommand<T> command) {
+    return evalWriteAsync(getRawName(), LongCodec.INSTANCE, command,
+                          "if ((redis.call('exists', KEYS[1]) == 0) " +
+                          "or (redis.call('hexists', KEYS[1], ARGV[2]) == 1)) then " +
+                          "redis.call('hincrby', KEYS[1], ARGV[2], 1); " +
+                          "redis.call('pexpire', KEYS[1], ARGV[1]); " +
+                          "return nil; " +
+                          "end; " +
+                          "return redis.call('pttl', KEYS[1]);",
+                          Collections.singletonList(getRawName()), unit.toMillis(leaseTime), getLockName(threadId));
+}
+```
+
+脚本变量解析：
+
+* `KEYS[1]`：`getRawName()`，锁的名称，，也就是`redisson:lock`，也就是Hash结构的key
+* `ARGV[1]`：锁的有效时间
+* `ARGV[2]`：`getLockName(threadId)`，锁在redis Hash结构中的field字段，例如：`56f3b6f6-74ae-4990-9628-95d505cc1d06:53`，其实就是UUID+线程ID
+
+从上面的代码中，我们可以看到几个关键的点：
+
+1. **在锁不存在的情况下**：如果**锁的key不存在**或者**锁的key+field的hash结构的value是1**的话，此时将key+field的值增加1并且设置有效时间，返回null。
+2. **在锁存在的情况下**：返回锁的剩余有效时间。
+
+## 第三步：订阅
+
+## 第四步：解锁
+
+## 第五步：看门狗
+
+这里我们继续深入，看下`scheduleExpirationRenewal(threadId)`的具体逻辑：
+
+```Java
+protected void scheduleExpirationRenewal(long threadId) {
+    ExpirationEntry entry = new ExpirationEntry();
+    entry.addThreadId(threadId);
+    ExpirationEntry oldEntry = EXPIRATION_RENEWAL_MAP.putIfAbsent(getEntryName(), entry);
+    if (oldEntry != null) {
+        oldEntry.addThreadId(threadId);
+    } else {
+        try {
+            renewExpiration();
+        } finally {
+            if (Thread.currentThread().isInterrupted()) {
+                cancelExpirationRenewal(threadId, null);
+            }
+        }
+    }
+}
+```
+
+未完待续~~~
 
 # 参考文章
 
