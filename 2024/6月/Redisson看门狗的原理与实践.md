@@ -455,6 +455,99 @@ private <T> RFuture<Long> tryAcquireAsync(long waitTime, long leaseTime, TimeUni
 
 ## 第三步：订阅
 
+这里我们来看之前在”第一步：尝试获取锁“中的这行代码：
+
+```Java
+CompletableFuture<RedissonLockEntry> subscribeFuture = subscribe(threadId);
+```
+
+我们走到具体的逻辑方法中看下做了些什么，这个方法在`org.redisson.pubsub.PublishSubscribe#subscribe`：
+
+```java
+public CompletableFuture<E> subscribe(String entryName, String channelName) {
+    // 获取信号量，这个信号量是Redisson自己封装的，默认只有一个许可
+    AsyncSemaphore semaphore = service.getSemaphore(new ChannelName(channelName));
+    // 创建执行订阅的任务
+    CompletableFuture<E> newPromise = new CompletableFuture<>();
+
+    // 信号量获取一个许可后的操作
+    semaphore.acquire().thenAccept(c -> {
+        // 任务执行完之后，释放信号量许可
+        if (newPromise.isDone()) {
+            semaphore.release();
+            return;
+        }
+
+        // 这里的泛型E的实际类型是org.redisson.RedissonLockEntry
+        // 根据entryName获取缓存的entry
+        E entry = entries.get(entryName);
+        if (entry != null) {
+            entry.acquire();
+            semaphore.release();
+            entry.getPromise().whenComplete((r, e) -> {
+                if (e != null) {
+                    newPromise.completeExceptionally(e);
+                    return;
+                }
+                newPromise.complete(r);
+            });
+            return;
+        }
+
+        E value = createEntry(newPromise);
+        value.acquire();
+
+        E oldValue = entries.putIfAbsent(entryName, value);
+        if (oldValue != null) {
+            oldValue.acquire();
+            semaphore.release();
+            oldValue.getPromise().whenComplete((r, e) -> {
+                if (e != null) {
+                    newPromise.completeExceptionally(e);
+                    return;
+                }
+                newPromise.complete(r);
+            });
+            return;
+        }
+
+        RedisPubSubListener<Object> listener = createListener(channelName, value);
+        CompletableFuture<PubSubConnectionEntry> s = service.subscribeNoTimeout(LongCodec.INSTANCE, channelName, semaphore, listener);
+        newPromise.whenComplete((r, e) -> {
+            if (e != null) {
+                s.completeExceptionally(e);
+            }
+        });
+        s.whenComplete((r, e) -> {
+            if (e != null) {
+                entries.remove(entryName);
+                value.getPromise().completeExceptionally(e);
+                return;
+            }
+            value.getPromise().complete(value);
+        });
+
+    });
+
+    return newPromise;
+}
+```
+
+* 方法的入参
+
+    * `entryName`：其实就是上面锁的field中的UUID+锁名
+
+    * `channelName`：就是一个连接的名称，例如这样：`redisson_lock__channel:{redisson:lock}`
+
+* 关键的局部变量
+
+    * semaphoore
+        * 类型：org.redisson.misc.AsyncSemaphore
+    * newPromise
+        * 类型：java.util.concurrent.CompletableFuture
+    * entry
+        * 类型：org.redisson.RedissonLockEntry
+
 ## 第四步：解锁
 
 ## 第五步：看门狗
@@ -480,7 +573,7 @@ protected void scheduleExpirationRenewal(long threadId) {
 }
 ```
 
-未完待续~~~
+
 
 # 参考文章
 
