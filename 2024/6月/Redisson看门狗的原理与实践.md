@@ -481,6 +481,7 @@ public CompletableFuture<E> subscribe(String entryName, String channelName) {
         // 这里的泛型E的实际类型是org.redisson.RedissonLockEntry
         // 根据entryName获取缓存的entry
         E entry = entries.get(entryName);
+        // 第一次获取锁的时候不会走下面
         if (entry != null) {
             entry.acquire();
             semaphore.release();
@@ -494,9 +495,11 @@ public CompletableFuture<E> subscribe(String entryName, String channelName) {
             return;
         }
 
+        // 第一次获取锁会创建
         E value = createEntry(newPromise);
         value.acquire();
 
+        // 将RedissionLockEntry放入entries数组中
         E oldValue = entries.putIfAbsent(entryName, value);
         if (oldValue != null) {
             oldValue.acquire();
@@ -511,19 +514,25 @@ public CompletableFuture<E> subscribe(String entryName, String channelName) {
             return;
         }
 
+        // 创建监听器，监听发布的消息
         RedisPubSubListener<Object> listener = createListener(channelName, value);
+        
+        // 订阅消息
         CompletableFuture<PubSubConnectionEntry> s = service.subscribeNoTimeout(LongCodec.INSTANCE, channelName, semaphore, listener);
+        // newPromise的get()方法执行超时会触发这个方法
         newPromise.whenComplete((r, e) -> {
             if (e != null) {
                 s.completeExceptionally(e);
             }
         });
+        // 订阅任务执行完成之后
         s.whenComplete((r, e) -> {
             if (e != null) {
                 entries.remove(entryName);
                 value.getPromise().completeExceptionally(e);
                 return;
             }
+            // 如果订阅成功，这里结束任务
             value.getPromise().complete(value);
         });
 
@@ -541,12 +550,35 @@ public CompletableFuture<E> subscribe(String entryName, String channelName) {
 
 * 关键的局部变量
 
-    * semaphoore
-        * 类型：org.redisson.misc.AsyncSemaphore
-    * newPromise
-        * 类型：java.util.concurrent.CompletableFuture
-    * entry
-        * 类型：org.redisson.RedissonLockEntry
+    * `semaphoore`
+        * 类型：`org.redisson.misc.AsyncSemaphore`
+    * `newPromise`
+        * 类型：`java.util.concurrent.CompletableFuture`
+        * 作用：表示该方法``subscribe(String entryName, String channelName)`的执行情况
+    * `entry/value`
+        * 类型：`org.redisson.RedissonLockEntry`
+    * `s`
+        * 类型：`CompletableFuture<PubSubConnectionEntry>`
+        * 作用：表示实际订阅操作任务的执行情况，也就是`service.subscribeNoTimeout(LongCodec.INSTANCE, channelName, semaphore, listener)`方法的执行情况
+
+上面这块订阅的代码里面有两个很关键的变量`newPromise`和`s`，**一个表示当前任务的执行情况，一个表示实际订阅任务的执行情况，通过两个方法的执行情况来互相控制对方的任务完成情况，是正常结束还是异常结束**。其实这两个方法都是同步执行的。
+
+接下来我们继续回到`org.redisson.RedissonLock#tryLock(long, long, java.util.concurrent.TimeUnit)`方法中，来看下这段代码：
+
+```Java
+if (ttl >= 0 && ttl < time) {
+    commandExecutor.getNow(subscribeFuture).getLatch().tryAcquire(ttl, TimeUnit.MILLISECONDS);
+} else {
+    commandExecutor.getNow(subscribeFuture).getLatch().tryAcquire(time, TimeUnit.MILLISECONDS);
+}
+```
+
+这段代码是级联调用，我们一步一步来分析下：
+
+* subscribeFuture：就是上面`subscribe(String entryName, String channelName)`返回的结果
+* commandExecutor.getNow(subscribeFuture)：就是CompletableFuture的result，也就是RedissonLockEntry
+
+
 
 ## 第四步：解锁
 
