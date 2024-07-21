@@ -554,7 +554,7 @@ public CompletableFuture<E> subscribe(String entryName, String channelName) {
         * 类型：`org.redisson.misc.AsyncSemaphore`
     * `newPromise`
         * 类型：`java.util.concurrent.CompletableFuture`
-        * 作用：表示该方法``subscribe(String entryName, String channelName)`的执行情况
+        * 作用：表示该方法`subscribe(String entryName, String channelName)`的执行情况
     * `entry/value`
         * 类型：`org.redisson.RedissonLockEntry`
     * `s`
