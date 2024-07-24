@@ -544,11 +544,14 @@ public CompletableFuture<E> subscribe(String entryName, String channelName) {
 
 * 方法的入参
 
-    * `entryName`：其实就是上面锁的field中的UUID+锁名
+    * `entryName`：其实就是上面锁的`field`中的UUID+锁名
 
-    * `channelName`：就是一个连接的名称，例如这样：`redisson_lock__channel:{redisson:lock}`
+    * `channelName`：消息订阅频道的名称，例如这样：`redisson_lock__channel:{redisson:lock}`
 
 * 关键的局部变量
+
+    * `listener`
+        * 类型：`org.redisson.client.RedisPubSubListener`
 
     * `semaphoore`
         * 类型：`org.redisson.misc.AsyncSemaphore`
@@ -575,12 +578,112 @@ if (ttl >= 0 && ttl < time) {
 
 这段代码是级联调用，我们一步一步来分析下：
 
-* subscribeFuture：就是上面`subscribe(String entryName, String channelName)`返回的结果
-* commandExecutor.getNow(subscribeFuture)：就是CompletableFuture的result，也就是RedissonLockEntry
+* `subscribeFuture`：就是上面`subscribe(String entryName, String channelName)`返回的结果
 
+* `commandExecutor.getNow(subscribeFuture)`：就是`CompletableFuture`的`result`，也就是`RedissonLockEntry`
 
+* `getLatch()`：获得的是`Semaphore`信号量对象，这个是JDK内置的对象。
+
+    我们走到`RedissonLockEntry`的源码中我们可以看到，这个变量的初始化代码如下：
+
+    ```Java
+    this.latch = new Semaphore(0);
+    ```
+
+    初始的的许可是0，需要等待释放许可。从上面的代码中可以看到获取信号量许可分别用了ttl和time两个不同的等待时间，如果上一锁的有效时间小于当前锁的等待时间等待ttl，否则等待time。
+
+这里要想获取到信号量的许可就得有地方释放信号量的许可，这个逻辑的入口在`org.redisson.pubsub.PublishSubscribe#createListener`中，接着会走到这段逻辑`org.redisson.pubsub.LockPubSub#onMessage`：
+
+```Java
+@Override
+protected void onMessage(RedissonLockEntry value, Long message) {
+    // 当收到解锁的消息的时候，这里就会释放信号量的许可
+    if (message.equals(UNLOCK_MESSAGE)) {
+        Runnable runnableToExecute = value.getListeners().poll();
+        if (runnableToExecute != null) {
+            runnableToExecute.run();
+        }
+
+        // 这里释放的许可就会唤醒getLatch().tryAcquire()方法
+        value.getLatch().release();
+    } else if (message.equals(READ_UNLOCK_MESSAGE)) {
+        while (true) {
+            Runnable runnableToExecute = value.getListeners().poll();
+            if (runnableToExecute == null) {
+                break;
+            }
+            runnableToExecute.run();
+        }
+
+        value.getLatch().release(value.getLatch().getQueueLength());
+    }
+}
+```
+
+这个订阅的消息是何时发布的呢？接下来我们来看解锁。
 
 ## 第四步：解锁
+
+首先我们来看解锁的入口方法，位于`org.redisson.RedissonBaseLock#unlockAsync(long)`：
+
+```Java
+@Override
+public RFuture<Void> unlockAsync(long threadId) {
+    RFuture<Boolean> future = unlockInnerAsync(threadId);
+
+    CompletionStage<Void> f = future.handle((opStatus, e) -> {
+        cancelExpirationRenewal(threadId);
+
+        if (e != null) {
+            throw new CompletionException(e);
+        }
+        if (opStatus == null) {
+            IllegalMonitorStateException cause = new IllegalMonitorStateException("attempt to unlock lock, not locked by current thread by node id: " + id + " thread-id: " + threadId);
+            throw new CompletionException(cause);
+        }
+
+        return null;
+    });
+
+    return new CompletableFutureWrapper<>(f);
+}
+```
+
+接着我们来看`org.redisson.RedissonBaseLock#unlockInnerAsync`方法：
+
+```Java
+protected RFuture<Boolean> unlockInnerAsync(long threadId) {
+    return evalWriteAsync(getRawName(), LongCodec.INSTANCE, RedisCommands.EVAL_BOOLEAN,
+                          "if (redis.call('hexists', KEYS[1], ARGV[3]) == 0) then " +
+                          "return nil;" +
+                          "end; " +
+                          "local counter = redis.call('hincrby', KEYS[1], ARGV[3], -1); " +
+                          "if (counter > 0) then " +
+                          "redis.call('pexpire', KEYS[1], ARGV[2]); " +
+                          "return 0; " +
+                          "else " +
+                          "redis.call('del', KEYS[1]); " +
+                          "redis.call('publish', KEYS[2], ARGV[1]); " +
+                          "return 1; " +
+                          "end; " +
+                          "return nil;",
+                          Arrays.asList(getRawName(), getChannelName()), LockPubSub.UNLOCK_MESSAGE, internalLockLeaseTime, getLockName(threadId));
+}
+```
+
+脚本变量解析：
+
+* `getRawName()`：也就是`KEYS[1]`，锁的名称，，也就是`redisson:lock`，也就是Hash结构的key
+* `getChannelName()`：也就是`KEYS[2]`，消息订阅频道的名称，例如这样：`redisson_lock__channel:{redisson:lock}`
+* `LockPubSub.UNLOCK_MESSAGE`：也就是`ARGV[1]`，是一个常量，值为`0L`，代表解锁
+* `internalLockLeaseTime`：也就是`ARGV[2]`，内部锁的有效时间，由于我没有显示的设置锁的有效时间，默认是看门狗的时间，为30s
+* `getLockName(threadId)`：也就是`ARGV[3]`，锁在redis Hash结构中的field字段，例如：`56f3b6f6-74ae-4990-9628-95d505cc1d06:53`，其实就是UUID+线程ID
+
+上面这段脚本的大体思路是：
+
+1. 锁如果不存在，就返回nil。
+2. 如果锁存在就将锁的value值减一，减一后的值如果大于0，就继续给锁延期30s并返回0。
+3. 减一后的值如果小于0或等于0，则删除这个key，并且发布消息到锁的频道中，告知订阅消息的人锁被释放了。这里就会触发在【解锁】那节说到的`onMessage()`方法了。
 
 ## 第五步：看门狗
 
