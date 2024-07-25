@@ -291,7 +291,7 @@ public class RedissonLock3 {
 
 # Redisson分布式锁的源码解析
 
-针对这块内容，我们对应到我们使用锁的几个步骤：第一个是获取锁，第二个是释放锁，第三个是看门狗。下面我们通过简单的分析代码逻辑和大脚讨论下这三个点：
+针对这块内容，对应到我们使用锁的几个步骤：第一个是获取锁，第二个是释放锁，第三个是看门狗。下面我们通过五个步骤分析代码逻辑和大家讨论下这三个点：
 
 ## 第一步：尝试获取锁
 
@@ -624,19 +624,22 @@ protected void onMessage(RedissonLockEntry value, Long message) {
 
 ## 第四步：解锁
 
-首先我们来看解锁的入口方法，位于`org.redisson.RedissonBaseLock#unlockAsync(long)`：
+解锁的这段代码之前其实就已经说过了，这里我们再详细的看下。解锁的入口方法，位于`org.redisson.RedissonBaseLock#unlockAsync(long)`：
 
 ```Java
 @Override
 public RFuture<Void> unlockAsync(long threadId) {
+    // 执行解锁的lua脚本
     RFuture<Boolean> future = unlockInnerAsync(threadId);
 
     CompletionStage<Void> f = future.handle((opStatus, e) -> {
+        // 取消看门狗进行锁延期的操作
         cancelExpirationRenewal(threadId);
 
         if (e != null) {
             throw new CompletionException(e);
         }
+        // 如果锁已经失效，则报错。也就是说释放锁的时候锁应该是没有过期的，否则就会报这个错
         if (opStatus == null) {
             IllegalMonitorStateException cause = new IllegalMonitorStateException("attempt to unlock lock, not locked by current thread by node id: " + id + " thread-id: " + threadId);
             throw new CompletionException(cause);
@@ -687,11 +690,13 @@ protected RFuture<Boolean> unlockInnerAsync(long threadId) {
 
 ## 第五步：看门狗
 
-这里我们继续深入，看下`scheduleExpirationRenewal(threadId)`的具体逻辑：
+在上面逻辑中我们讨论的获取锁到释放锁的整个流程，其中在**获取锁**和**释放锁**这两步中都有看门狗的身影。这里我们继续深入，首先我们来看获取锁时看门狗的逻辑，方法入口在`org.redisson.RedissonLock#tryAcquireAsync()`方法的`scheduleExpirationRenewal(threadId)`中，具体逻辑如下：
 
 ```Java
 protected void scheduleExpirationRenewal(long threadId) {
+    // 构造延时对象
     ExpirationEntry entry = new ExpirationEntry();
+    // 将线程id加到这个锁的延迟对象的threadIds Map中，同一个线程可能会多次获取相同的锁
     entry.addThreadId(threadId);
     ExpirationEntry oldEntry = EXPIRATION_RENEWAL_MAP.putIfAbsent(getEntryName(), entry);
     if (oldEntry != null) {
@@ -708,7 +713,87 @@ protected void scheduleExpirationRenewal(long threadId) {
 }
 ```
 
+关键参数：
 
+* `getEntryName`：就是锁的UUID+锁名，例如这样：`627649aa-47ea-4f83-80a1-93a98b7a01e8:redisson:lock`
+
+接着往里走，就是方法`org.redisson.RedissonBaseLock#renewExpiration`：
+
+```Java
+private void renewExpiration() {
+    ExpirationEntry ee = EXPIRATION_RENEWAL_MAP.get(getEntryName());
+    if (ee == null) {
+        return;
+    }
+
+    // 创建延时任务，延时（internalLockLeaseTime / 3）秒执行一次
+    // 这里的newTimeout()里面其实是用的Netty的HashedWheelTimer来做的
+    Timeout task = commandExecutor.getConnectionManager().newTimeout(new TimerTask() {
+        @Override
+        public void run(Timeout timeout) throws Exception {
+            ExpirationEntry ent = EXPIRATION_RENEWAL_MAP.get(getEntryName());
+            if (ent == null) {
+                return;
+            }
+            // 获取线程id
+            Long threadId = ent.getFirstThreadId();
+            if (threadId == null) {
+                return;
+            }
+
+            // 对锁进行延时
+            CompletionStage<Boolean> future = renewExpirationAsync(threadId);
+            future.whenComplete((res, e) -> {
+                if (e != null) {
+                    log.error("Can't update lock {} expiration", getRawName(), e);
+                    EXPIRATION_RENEWAL_MAP.remove(getEntryName());
+                    return;
+                }
+
+            	// 如果延时成功，再次制定定时任务
+                if (res) {
+                    // reschedule itself
+                    renewExpiration();
+                } else {
+                    // 延迟失败，取消看门狗延时
+                    cancelExpirationRenewal(null);
+                }
+            });
+        }
+    }, internalLockLeaseTime / 3, TimeUnit.MILLISECONDS);
+
+    ee.setTimeout(task);
+}
+```
+
+看下延时的代码：
+
+```Java
+protected CompletionStage<Boolean> renewExpirationAsync(long threadId) {
+    return evalWriteAsync(getRawName(), LongCodec.INSTANCE, RedisCommands.EVAL_BOOLEAN,
+                          "if (redis.call('hexists', KEYS[1], ARGV[2]) == 1) then " +
+                          "redis.call('pexpire', KEYS[1], ARGV[1]); " +
+                          "return 1; " +
+                          "end; " +
+                          "return 0;",
+                          Collections.singletonList(getRawName()),
+                          internalLockLeaseTime, getLockName(threadId));
+}
+```
+
+延时的代码很简单，延时成功返回`ture`，延时失败返回`false`。
+
+上面说完代码逻辑，这里我们重点介绍下Netty中的`HashedWheelTimer`，是基于时间轮算法实现的一个定时任务工具，该算法主要思路就是将时间拆分成固定份数时间段的环形钟表盘，钟表上的每一格代表一段时间，也称为Tick，这个时间拆分的越小，任务触发的时间就越精确。并用一个链表报错在该格子上的到期任务，同时一个指针随着时间一格一格转动，并执行相应格子中的到期任务。任务通过取摸决定放入那个格子。如下图所示：
+
+![](../../assert/时间轮.png)
+
+按照论文PPT的这张图为例：这里一个轮子包含8个格子（Tick), 每个tick是一秒钟。如果一个任务要在17秒后执行，那么它需要转2圈，最终加到Tick=1位置的链表中。在时钟转2圈到Tick=1的位置，开始执行这个位置指向的链表中的这个任务。
+
+# 总结
+
+由于在日常开发中，Redis作为外部缓存是大部分高性能程序的必备组件，相比于Zookeeper通过Redis实现分布式锁就更为方便。由于在分布式环境中，基于CAP原理来考量，Redis只满足AP属性，即可用性和容错性，无法满足强一致性，但是其提供的高性能、原子性和易用性，对于大部分的业务场景都是最佳的选择。
+
+最后，在使用Redis分布式锁的时候，**一要正确的获取锁和释放锁，二不要设置有效时间，依赖看门狗机制确保锁持有者的正常运行。**
 
 # 参考文章
 
@@ -720,3 +805,4 @@ protected void scheduleExpirationRenewal(long threadId) {
 * [Redisson 源码解析](https://juejin.cn/post/6901951315962757134)
 * [源码解析之Redisson](https://nageoffer.com/sourcecode/redisson/#reentrantlock-%E9%87%8D%E5%85%A5%E9%94%81)
 * [Redisson源码解读-分布式锁](https://www.javaedit.com/archives/164)
+* [Redis进阶 - 消息传递：发布订阅模式详解](https://pdai.tech/md/db/nosql-redis/db-redis-x-pub-sub.html)
