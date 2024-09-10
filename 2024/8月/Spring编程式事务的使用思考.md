@@ -47,7 +47,7 @@ public class TransactionManager {
 - `DataSourceTransactionManager`：负责描述事物具体运行的状态，可以间接回滚事务。
 - `DefaultTransactionDefinition`：负责管理事务。该类是`PlatformTransactionManager`的子类，我们通过调用它的`commit()`和`rollback()`方法来实现事务的提交和回滚。在使用Spring JDBC或是Mybatis作为ORM框架是使用该事务管理器。
 
-# 超时时间等关键参数的设置
+# 超时时间参数的设置
 
 在上面的配置中，如果我使用手动事务时无法估算事务的执行时间，可以将事务超时时间设置为`-1`，这通常意味着事务没有明确的超时限制，即事务可以无限期地运行，直到它完成或遇到错误。
 
@@ -62,9 +62,17 @@ public class TransactionManager {
     ```Java
     int timeout = determineTimeout(definition);
     if (timeout != TransactionDefinition.TIMEOUT_DEFAULT) {
-    txObject.getConnectionHolder().setTimeoutInSeconds(timeout);
+        txObject.getConnectionHolder().setTimeoutInSeconds(timeout);
     }
     ```
+
+2. 在`ResourceHolderSupport`类中定义了两个方法，分别是`getTimeToLiveInSeconds()`和`getTimeToLiveInMills()`这两个方法的主要逻辑都是一样的，就是判断当前时间是否已经超过了上面提到的`daedline`，值得注意的是代码中是`getTimeToLiveInSeconds()`调用了`getTimeToLiveInMills()`，也就是先在毫秒的维度判断是否超时，然后在秒的维度判断超时。如果超过了说明事务已经过期了，会抛出`TransactionTimeOutException`异常。
+
+3. 在spring-jdbc中，在创建`Statement`对象后为其设置`QueryTime`属性时，在`JdbcTemplate的applyStatementSettings()`方法中会调用`DataSourceUtils.applyTimeout()`方法，在这个方法中就会用到上面提到的`getTimeToLiveInSeconds()`方法，校验当前的事务是否超时。值得注意的是在Mybatis中设置Statement的QueryTime属性是通过调用`DataSourceUtils.applyTimeout()`方法实现的。
+
+    > 在 JDBC 中，`Statement` 接口的 `setQueryTimeout` 方法用于为执行的 SQL 查询设置超时时间。这个方法接受一个整数参数，表示超时时间的秒数。当查询执行时间超过设定的超时时间时，会抛出一个 `SQLException`。这可以防止某些查询因长时间执行而影响应用程序的性能和响应性。
+
+4. 在Mybatis中，在创建`Statement`对象为其设置`QueryTime`属性时，会先调用`SpringManagerTransaction`的`getTimeout()`方法，在这个方法中会调用上面提到的`getTimeToLiveInSeconds()`方法，校验当前的事务是否超时。值得注意的是在Mybatis中设置`Statement`的`QueryTime`属性是通过调用`BaseStatementHandler.setStatementTimeout()`方法来实现的。
 
 # 自定义TransactionManager的使用范式
 
