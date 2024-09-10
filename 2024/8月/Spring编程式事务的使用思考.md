@@ -58,14 +58,12 @@ public class TransactionManager {
     ![](../../assert/DataSourceTransactionManager调用的堆栈.png)
 
     在这个方法中，将事务定义的超时时间通过调用`org.springframework.jdbc.datasource.ConnectionHolder`对象的`setTimeoutInSeconds()`方法，最终这个超时时间会放到`org.springframework.transaction.support.ResourceHolderSupport`的`deadline`属性上：
-
     ```Java
     int timeout = determineTimeout(definition);
     if (timeout != TransactionDefinition.TIMEOUT_DEFAULT) {
         txObject.getConnectionHolder().setTimeoutInSeconds(timeout);
     }
     ```
-
 2. 在`ResourceHolderSupport`类中定义了两个方法，分别是`getTimeToLiveInSeconds()`和`getTimeToLiveInMills()`这两个方法的主要逻辑都是一样的，就是判断当前时间是否已经超过了上面提到的`daedline`，值得注意的是代码中是`getTimeToLiveInSeconds()`调用了`getTimeToLiveInMills()`，也就是先在毫秒的维度判断是否超时，然后在秒的维度判断超时。如果超过了说明事务已经过期了，会抛出`TransactionTimeOutException`异常。
 
 3. 在spring-jdbc中，在创建`Statement`对象后为其设置`QueryTime`属性时，在`JdbcTemplate的applyStatementSettings()`方法中会调用`DataSourceUtils.applyTimeout()`方法，在这个方法中就会用到上面提到的`getTimeToLiveInSeconds()`方法，校验当前的事务是否超时。值得注意的是在Mybatis中设置Statement的QueryTime属性是通过调用`DataSourceUtils.applyTimeout()`方法实现的。
