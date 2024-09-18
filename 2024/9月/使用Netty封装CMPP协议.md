@@ -13,15 +13,16 @@
 看完正常的执行流程，下面我们来看下入站Hander的异常是如何传递和处理的。
 
 - 不进行任何异常捕获
-    -  在这个场景中，我在HandlerA的`channelRead()`方法中抛出异常，但是并没有复写其`exceptionCaught()`方法，在后面的HandlerB和HandlerC中，我们也没有复写其`exceptionCaught()`方法。也就是说在所有入栈Handler中，我们都没有进行异常捕获。可以看到Netty默认情况下是有异常捕获逻辑的，会将异常堆栈记录到Warn日志中。
-    - 
+
+    在这个场景中，我在HandlerA的`channelRead()`方法中抛出异常，但是并没有复写其`exceptionCaught()`方法，在后面的HandlerB和HandlerC中，我们也没有复写其`exceptionCaught()`方法。也就是说在所有入栈Handler中，我们都没有进行异常捕获。可以看到Netty默认情况下是有异常捕获逻辑的，会将异常堆栈记录到Warn日志中。
+
 - 自己的异常自己捕获
 
-在这个场景中，我依然在HandlerA的`channelRead()`方法中抛出异常，并复写其exceptionCaught()方法，但是针对HandlerB和HandlerC不复写其`exceptionCaught()`方法。从下图中客户端运行日志的结果来看，HandlerA中ChannelRead()抛出的异常被自己的`exceptionCaught()`方法所捕获。
+    在这个场景中，我依然在HandlerA的`channelRead()`方法中抛出异常，并复写其exceptionCaught()方法，但是针对HandlerB和HandlerC不复写其`exceptionCaught()`方法。从下图中客户端运行日志的结果来看，HandlerA中ChannelRead()抛出的异常被自己的`exceptionCaught()`方法所捕获。
 
 - 前面抛出异常，后面处理
 
-在这个场景中，我们依然在HandlerA的`channelRead()`方法中抛出异常，但是并没有复写其`exceptionCaught()`方法，为了方便演示入站Handler的异常传播逻辑，我在HandlerC中复写了它的`exceptionCaught()`方法，从如下图中我们可以看出，在HandlerC中捕获了HandlerA的`channelRead()`方法抛出的异常。也就是说对于入站Handler，它的异常是顺序沿着Handler依次传递的。
+    在这个场景中，我们依然在HandlerA的`channelRead()`方法中抛出异常，但是并没有复写其`exceptionCaught()`方法，为了方便演示入站Handler的异常传播逻辑，我在HandlerC中复写了它的`exceptionCaught()`方法，从如下图中我们可以看出，在HandlerC中捕获了HandlerA的`channelRead()`方法抛出的异常。也就是说对于入站Handler，它的异常是顺序沿着Handler依次传递的。
 
 ## 出站Handler的异常处理
 
@@ -29,11 +30,10 @@
 
 - 不进行任何异常捕获
 
-这个例子中，我们在HandlerA的`write()`方法中抛出了异常，但是没有做任何异常捕获，在这种情况下日志的输出如下图所示。可以看到Netty默认情况下是有异常捕获逻辑的，会将异常堆栈记录到Warn日志中。
+    这个例子中，我们在HandlerA的`write()`方法中抛出了异常，但是没有做任何异常捕获，在这种情况下日志的输出如下图所示。可以看到Netty默认情况下是有异常捕获逻辑的，会将异常堆栈记录到Warn日志中。
 
 - 在发送消息时设置监听器
-
-在我们发送消息的源头，也就是第一个调用`write()`和`writeAndFlush()`的地方，我们可以调用`addLister()`方法为`ChannelFuture`设置`ChannelFutureLister`，在这个监听器中打印异常堆栈信息和关闭连接。具体的代码如下：
+- 在我们发送消息的源头，也就是第一个调用`write()`和`writeAndFlush()`的地方，我们可以调用`addLister()`方法为`ChannelFuture`设置`ChannelFutureLister`，在这个监听器中打印异常堆栈信息和关闭连接。具体的代码如下：
 
 运行结果的日志截图如下，从下图中我们可以看到，日志中不仅打印出了Netty默认的Warn日志，还打印出了我们在监听器中的异常日志。
 
@@ -54,7 +54,7 @@
 
 1. **TCP****缓冲区**：TCP使用缓冲区来优化数据的发送和接收。如果发送的数据小于缓冲区大小，TCP可能会将多个数据包合并后发送；如果数据大于缓冲区大小，则会发生拆包（半包）。
 2. **Nagle算法**：TCP的Nagle算法会将小的数据包合并后发送，以减少网络拥塞和提高传输效率，这也可能导致粘包。
-3. **MSS和****MTU**：TCP在发送数据时，会根据MSS（最大报文段长度）和MTU（最大传输单元）的大小限制进行拆包，以避免在网络层进行分片。
+3. **MSS**和**MTU**：TCP在发送数据时，会根据MSS（最大报文段长度）和MTU（最大传输单元）的大小限制进行拆包，以避免在网络层进行分片。
 
 ## 解决粘包和拆包的方法
 

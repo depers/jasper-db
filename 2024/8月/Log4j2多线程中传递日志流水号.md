@@ -31,4 +31,44 @@ Slf4j中MDC API定义的主要方法：
 - `remove(String key)`：删除当前线程 MDC 中指定的键值对
 - `setContextMap()`：将父线程的MDC内容传给子线程
 
-介绍完了MDC的基本使用，我们来看下具体的实现，首先是MdcUtil，这里主要针对Runnable和Callable进行了适配，在线程池执行业务逻辑之前，将父线程的MDC传递给子线程，在子线程执行结束之后将子线程的MDC进行清理，具体的代码逻辑如下：
+介绍完了MDC的基本使用，我们来看下具体的实现，首先是`MdcUtil`，这里主要针对Runnable和Callable进行了适配，在线程池执行业务逻辑之前，将父线程的MDC传递给子线程，在子线程执行结束之后将子线程的MDC进行清理，具体的代码逻辑如下：
+
+接着就是对线程池进行封装，讲MDC的逻辑融入线程池的调用逻辑中，代码如下所示，对其`execute()`和`submit()`方法进行封装：
+
+这样我们在业务逻辑中使用线程池，就可以方便的讲异步线程池的日志与我们原有主线程业务逻辑日志进行融合，方便我们排查问题，具体的使用示例和代码如下所示：
+
+更加详细的代码可以访问multi-thread-log进行获取。
+
+# 如何在Netty中传递日志流水号
+
+在项目中如果涉及TCP协议的交易使用Netty去进行封装是十分便利的，相比Java提供的Socket API，Netty对TCP的API封装和性能提供了更好的方案。这里我以Netty客户端的开发为例说明如何讲主线程的流水号传递到客户端线程中，从而方便我们跟踪客户端的行为。
+
+按照之前的经验，如果要串联一段关联操作的日志，只需要找到**连接建立**和**连接关闭**这两个触点代码，在这里补充添加MDC和清空MDC的逻辑就行，在Netty客户端中，这两个触点在哪呢？
+
+- 建立连接触点
+
+    在`Bootstrap.connect()`的`ChannelFuture`上添加监听器，在监听器逻辑中添加MDC。
+
+    ```Java
+    boostrap.connect(host, port).addLister((ChannelFutureListener) future     -> {
+    MDC.put("log4j2Id", log4j2Id);
+    // ...
+    }).sync();
+    ```
+
+- 关闭连接触点
+
+    在我们拿到响应之后关闭连接时，我们可以添加一个异步监听器，在连接关闭之后执行监听器的逻辑，在这里清除MDC。
+    
+    ```Java
+    channel.close().addListener((ChannelFutureListener) future -> {
+        MDC.clear();
+    });
+    ```
+
+
+# 参考文章
+
+- [日志之MDC和异步多线程间传递线程id](https://blog.csdn.net/u012060033/article/details/129718315)
+- [Spring Boot + MDC 实现全链路调用日志跟踪，这才叫优雅](https://developer.aliyun.com/article/1002910)
+- [lovelife-li/netty-study](https://github.hscsec.cn/lovelife-li/netty-study)
