@@ -1,6 +1,6 @@
 | title                 | tags           | background                                                   | auther | isSlow |
 | --------------------- | -------------- | ------------------------------------------------------------ | ------ | ------ |
-| 使用Netty封装CMPP协议 | Netty/网络编程 | 最近在项目中有一个短信发送的功能是通过调用中国移动的交易实现的，这篇文章介绍了基于Netty框架实现CMPP协议封装的关键要点，以及Netty的一些使用要点。 | depers | true   |
+| 使用Netty封装CMPP协议 | Netty/网络编程 | 最近在项目中有一个短信发送的功能是通过调用中国移动的交易实现的，这篇文章介绍了基于Netty框架实现CMPP协议客户端封装的关键要点，以及Netty的一些使用技巧。 | depers | true   |
 
 # Netty中的异常处理
 
@@ -93,7 +93,7 @@
 - `initialBytesToStrip`：解码器在返回帧之前应该跳过的字节数。例如，如果帧包含了长度字段本身的字节，那么这些字节就需要被跳过。
 - `failFast`：这个参数用于控制解码器在遇到错误时是否立即抛出异常。当`failFast`参数设置为`true`时，如果解码过程中发现数据不符合预期（例如，数据长度不符合指定的固定长度），解码器会立即抛出一个`DecoderException`异常。这种方式可以快速失败，避免处理不完整或错误的数据，但可能会导致数据流中的后续数据被忽略或丢失。相反，当`failFast`参数设置为`false`时，解码器会尝试继续处理数据，即使当前数据块不符合预期。这意味着它会给数据流中的错误更多的容忍空间，尝试从错误中恢复，而不是立即抛出异常。这样做的好处是可以减少因单个错误数据包导致的整个数据流处理的中断，但可能会增加处理错误数据的风险。一般都设置为`true`。
 
-![img](https://mcnra9oc33tz.feishu.cn/space/api/box/stream/download/asynccode/?code=YmVlOGM3MzY3OGNiOGYxNjUyNzBlZWUzZWI1OTZjOGRfSXlyZEM1VG1hcmhHT2xqN3NnTjlIdVlIemFZb0dJTkxfVG9rZW46SXZZS2IzYTh3b1Z3N2Z4OVU4S2NWQ2k1bkplXzE3MjY2Njg5Nzg6MTcyNjY3MjU3OF9WNA)
+![](../../assert/netty中fixedLength帧长的参数说明.png)
 
 看完上面的参数说明，可能还是一头雾水，我们直接上代码：，我们一个一个来分析下。
 

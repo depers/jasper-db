@@ -51,8 +51,8 @@ Slf4j中MDC API定义的主要方法：
 
     ```Java
     boostrap.connect(host, port).addLister((ChannelFutureListener) future     -> {
-    MDC.put("log4j2Id", log4j2Id);
-    // ...
+        MDC.put("log4j2Id", log4j2Id);
+        // ...
     }).sync();
     ```
 
