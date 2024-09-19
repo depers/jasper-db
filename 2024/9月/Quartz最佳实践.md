@@ -125,10 +125,10 @@ spring:
 
     -  在配置文件中，可以通过以下方式设置 `instanceId` 和相关的生成器类：
 
-      ```YAML
+       ```YAML
         org.quartz.scheduler.instanceId = AUTO
         org.quartz.scheduler.instanceIdGenerator.class = org.quartz.simpl.SimpleInstanceIdGenerator
-      ```
+       ```
 
 - `threadPool.class`：线程池（ThreadPool）提供一组线程供Quartz在执行作业（Job）时使用。线程池中的线程数量决定了可以同时执行的作业数量。Quartz默认提供的线程池实现是 `org.quartz.simpl.SimpleThreadPool`，它对于大多数用户来说已经足够使用。
 
@@ -156,10 +156,23 @@ spring:
 
 | 表字段        | 含义                                                         |
 | :------------ | :----------------------------------------------------------- |
-| priority      | 在Quartz中，`qrtz_triggers` 表的 `priority` 字段用于设置触发器的优先级。当多个触发器同时触发时，线程池中的线程不足以处理所有触发器，此时会根据触发器的优先级来决定哪个触发器先执行。优先级数值越大，优先级越高。如果没有显式设置触发器的优先级，那么它将使用默认优先级，通常这个默认值是5。在配置触发器时，可以通过编程方式设置优先级。例如，在Java代码中，可以使用 `TriggerBuilder` 来构建触发器并设置其优先级：<code class="language-Java hljs">Trigger trigger = TriggerBuilder.newTrigger().withIdentity("myTrigger","group1").startNow().withSchedule(SimpleScheduleBuilder.simpleSchedule().withIntervalInSeconds(40).repeatForever()).withPriority(10).build();</code> |
+| priority      | 在Quartz中，`qrtz_triggers` 表的 `priority` 字段用于设置触发器的优先级。当多个触发器同时触发时，线程池中的线程不足以处理所有触发器，此时会根据触发器的优先级来决定哪个触发器先执行。优先级数值越大，优先级越高。如果没有显式设置触发器的优先级，那么它将使用默认优先级，通常这个默认值是5。在配置触发器时，可以通过编程方式设置优先级。例如，在Java代码中，可以使用 `TriggerBuilder.withPriority(10)` 来构建触发器并设置其优先级。 |
 | trigger_state | `qrtz_triggers`表的`trigger_state`字段用于表示触发器的状态。常见的状态值有：WAITING：触发器正在等待触发条件满足。ACQUIRED：触发器已被调度器获取，准备触发。EXECUTING：触发器正在执行相关的任务。COMPLETE：触发器执行完成。BLOCKED：触发器被阻塞，可能由于资源竞争或其他原因。PAUSED：触发器被暂停，不会触发任务，直到恢复。ERROR：触发器处于错误状态。 |
 | trigger_type  | 在Quartz中，`qrtz_triggers` 表的 `trigger_type` 字段用于指示触发器的类型。这个字段通常用于区分不同类型的触发器，例如 `CRON`、`SIMPLE` 或者 `BLOB` 等。每种触发器类型都有其特定的属性和行为。`CRON`：表示触发器使用 cron 表达式来定义触发规则。`SIMPLE`：表示触发器使用简单的重复间隔来定义触发规则。`BLOB`：表示触发器使用二进制大型对象（blob）来存储其触发规则，这通常用于自定义的触发器类型。 |
 | misfire_instr | 在Quartz中，`qrtz_triggers `表的 `misfire_instr`字段是一个关键的属性，它定义了当触发器错过了预定的触发时间（即发生了“misfire”）时，Quartz应该如何处理这种情况。这个字段的设置在后续章节再来详细说明。 |
+
+下面是一段声明触发器的代码，方便大家参考：
+```Java
+Trigger trigger = TriggerBuilder.newTrigger()
+    .withIdentity("myTrigger","group1")
+    .startNow()
+    .withSchedule(SimpleScheduleBuilder
+                  .simpleSchedule()
+                  .withIntervalInSeconds(40)
+                  .repeatForever())
+    .withPriority(10) // 设置触发器的优先级
+    .build();
+```
 
 ## qrtz_cron_triggers 
 
