@@ -86,11 +86,12 @@ spring:
 
 - `isClustered`：用于指定调度器是否以集群模式运行。集群模式下的Quartz调度器可以跨越多个实例（节点）共享作业和触发器，这些实例通常连接到同一个数据库。这种模式非常适合于需要高可用性和负载均衡的场景。
 
-    -  值得注意的是：
-    - 当`isClustered`设置为`true`时，Quartz会使用数据库中的锁机制来确保同一时间只有一个节点执行特定的作业。
-    - 集群模式需要所有节点连接到同一个数据库，并且共享相同的Quartz表结构。
-    - 在集群环境中，通常需要配置`instanceId`以确保每个节点都有一个唯一标识。
-    - 集群模式下，作业的持久化（`storeDurably`）和故障恢复（`requestRecovery`）设置非常重要，以确保作业在节点故障后能够被其他节点接管。
+    值得注意的是：
+
+    -  当`isClustered`设置为`true`时，Quartz会使用数据库中的锁机制来确保同一时间只有一个节点执行特定的作业。
+    -  集群模式需要所有节点连接到同一个数据库，并且共享相同的Quartz表结构。
+    -  在集群环境中，通常需要配置`instanceId`以确保每个节点都有一个唯一标识。
+    -  集群模式下，作业的持久化（`storeDurably`）和故障恢复（`requestRecovery`）设置非常重要，以确保作业在节点故障后能够被其他节点接管。
 
 - `clusterCheckinInterval`：在Quartz中，`clusterCheckinInterval` 是一个重要的配置属性，它定义了调度器实例（Scheduler instance）在集群模式下向数据库中记录其状态的频率。这个频率是以毫秒为单位的，调度器会在这个时间间隔内更新它在 `qrtz_scheduler_state` 表中的最后检入时间（`last_checkin_time`）。这个属性对于集群模式下的故障检测和故障恢复至关重要。
 
