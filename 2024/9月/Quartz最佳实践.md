@@ -108,15 +108,13 @@ spring:
 
 - `instanceId`：用于在集群环境中标识不同的调度器实例。每个调度器实例都应该有一个唯一的 `instanceId`，以确保在集群中的多个节点可以协同工作，而不会相互干扰。
 
-    -  `instanceId` 可以设置为以下值之一：
+    `instanceId` 可以设置为以下值之一：
 
-    - `NON_CLUSTERED`：表示调度器不参与集群。
+    -  `NON_CLUSTERED`：表示调度器不参与集群。
+    -  `AUTO`：Quartz将自动生成一个唯一的 `instanceId`。
+    -  `SYS_PROP`：从系统属性 `org.quartz.scheduler.instanceId` 中获取值。
 
-    - `AUTO`：Quartz将自动生成一个唯一的 `instanceId`。
-
-    - `SYS_PROP`：从系统属性 `org.quartz.scheduler.instanceId` 中获取值。
-
-    -  此外，可以通过实现 `InstanceIdGenerator` 接口来提供自定义的 `instanceId` 生成策略。Quartz提供了几种内置的 `InstanceIdGenerator` 实现，例如：
+    此外，可以通过实现 `InstanceIdGenerator` 接口来提供自定义的 `instanceId` 生成策略。Quartz提供了几种内置的 `InstanceIdGenerator` 实现，例如：
 
     - `SimpleInstanceIdGenerator`：基于主机名和时间戳生成 `instanceId`。
 
@@ -124,13 +122,13 @@ spring:
 
     - `HostnameInstanceIdGenerator`：使用本地主机名生成 `instanceId`。
 
-    -  在配置文件中，可以通过以下方式设置 `instanceId` 和相关的生成器类：
+    - 在配置文件中，可以通过以下方式设置 `instanceId` 和相关的生成器类：
 
        ```YAML
         org.quartz.scheduler.instanceId = AUTO
         org.quartz.scheduler.instanceIdGenerator.class = org.quartz.simpl.SimpleInstanceIdGenerator
        ```
-
+    
 - `threadPool.class`：线程池（ThreadPool）提供一组线程供Quartz在执行作业（Job）时使用。线程池中的线程数量决定了可以同时执行的作业数量。Quartz默认提供的线程池实现是 `org.quartz.simpl.SimpleThreadPool`，它对于大多数用户来说已经足够使用。
 
     -  SimpleThreadPool 是一个简单但非常可靠的线程池实现，它维护了一个固定数量的线程，这些线程的生命周期与调度器（Scheduler）的生命周期相同。它提供了一个固定大小的线程池，适用于大多数情况，并且经过了很好的测试。Quartz还支持创建自己的线程池实现，这里不多做叙述。
@@ -157,8 +155,8 @@ spring:
 
 | 表字段        | 含义                                                         |
 | :------------ | :----------------------------------------------------------- |
-| priority      | 在Quartz中，`qrtz_triggers` 表的 `priority` 字段用于设置触发器的优先级。当多个触发器同时触发时，线程池中的线程不足以处理所有触发器，此时会根据触发器的优先级来决定哪个触发器先执行。优先级数值越大，优先级越高。如果没有显式设置触发器的优先级，那么它将使用默认优先级，通常这个默认值是5。在配置触发器时，可以通过编程方式设置优先级。例如，在Java代码中，可以使用 `TriggerBuilder.withPriority(10)` 来构建触发器并设置其优先级。 |
-| trigger_state | `qrtz_triggers`表的`trigger_state`字段用于表示触发器的状态。常见的状态值有：</br>WAITING：触发器正在等待触发条件满足。</br>ACQUIRED：触发器已被调度器获取，准备触发。</br>EXECUTING：触发器正在执行相关的任务。</br>COMPLETE：触发器执行完成。</br>BLOCKED：触发器被阻塞，可能由于资源竞争或其他原因。</br>PAUSED：触发器被暂停，不会触发任务，直到恢复。</br>ERROR：触发器处于错误状态。 |
+| priority      | 在Quartz中，`qrtz_triggers` 表的 `priority` 字段用于设置触发器的优先级。当多个触发器同时触发时，线程池中的线程不足以处理所有触发器，此时会根据触发器的优先级来决定哪个触发器先执行。优先级数值越大，优先级越高。如果没有显式设置触发器的优先级，那么它将使用默认优先级，通常这个默认值是5。在配置触发器时，可以通过编程方式设置优先级。例如，在Java代码中，可以使用 `TriggerBuilder.withPriority(10)` 来构建触发器并设置其优先级。需要注意的是你可以设置任何整数值作为优先级，无论是正数还是负数，这个优先级是触发器的优先级，与上面提到的线程的优先级是不同的。 |
+| trigger_state | `qrtz_triggers`表的`trigger_state`字段用于表示触发器的状态。常见的状态值有：</br>WAITING：触发器正在等待触发条件满足。</br>ACQUIRED：触发器已被调度器获取，准备触发。</br>EXECUTING：触发器正在执行相关的任务。</br>COMPLETE：触发器执行完成。</br>BLOCKED：触发器被阻塞，可能由于资源竞争或其他原因。</br>PAUSED：触发器被暂停，不会触发任务，直到恢复。</br>ERROR：触发器处于错误状态。</br>PAUSED_BLOCKED：任务执行期间，相关的触发器被暂停。换句话说就是在任务执行期间，暂停任务。 |
 | trigger_type  | 在Quartz中，`qrtz_triggers` 表的 `trigger_type` 字段用于指示触发器的类型。这个字段通常用于区分不同类型的触发器，例如 `CRON`、`SIMPLE` 或者 `BLOB` 等。每种触发器类型都有其特定的属性和行为。</br>`CRON`：表示触发器使用 cron 表达式来定义触发规则。</br>`SIMPLE`：表示触发器使用简单的重复间隔来定义触发规则。</br>`BLOB`：表示触发器使用二进制大型对象（blob）来存储其触发规则，这通常用于自定义的触发器类型。 |
 | misfire_instr | 在Quartz中，`qrtz_triggers `表的 `misfire_instr`字段是一个关键的属性，它定义了当触发器错过了预定的触发时间（即发生了“misfire”）时，Quartz应该如何处理这种情况。这个字段的设置在后续章节再来详细说明。 |
 
@@ -221,11 +219,48 @@ Trigger trigger = TriggerBuilder.newTrigger()
 
 ## 动态新增
 
+### Cron任务
+
+对于Cron任务来说，创建任务之后，在`qrtz_job_details`、`qrtz_cron_triggers`和`qrtz_triggers`会分别插一条记录。创建任务的代码如下所示：
+
+
+
+### Simple任务
+
+对于Simple任务来说，创建任务之后，在`qrtz_job_details`、`qrtz_simple_triggers`和`qrtz_triggers`会分别插一条记录。下面代码演示的是指定固定时间的跑批任务，**待任务执行之后，该任务在上面三张表的记录在会被自动清除**。
+
+
+
 ## 暂停批量
+
+暂停任务只是将`qrtz_triggers`表的`trigger_state`字段更新为`PAUSED`或是`PAUSED_BLOCKED`。**无论是Simple任务还是****Cron****任务，任务已经开始执行的任务线程不会停止**。对于Simple任务来说任务开始执行之后`trigger_state`字段就被置为`COMPLETE`。暂停任务的代码对于这两种类型的任务都是一样的，代码如下：
+
+
 
 ## 删除批量
 
+对于Cron任务来说，删除任务会将`qrtz_job_details`、`qrtz_cron_triggers`和`qrtz_triggers`的记录清除；对于Simple任务来说，删除任务会将`qrtz_job_details`、`qrtz_simple_triggers`和`qrtz_triggers`的记录清除。
+
+删除任务的代码对于这两种类型的任务都是一样的，代码如下：
+
+
+
 # 错过执行策略
+
+在前面的章节中我们提到过`org.quatz.jobStore.misfireThreshold`配置项，他的作用是设置一个批量错过触发时间的最大阈值，如果超过这个时间才认定这个批量错过执行了。接着会根据**错过执行的处理策略**来判断是否继续执行该批量，下面就让我们一起讨论下这块逻辑。
+
+## Cron任务
+
+对于Cron任务来说，他有四种错过执行的处理策略：
+
+1. `MISFIRE_INSTRUCTION_SMART_POLICY`（值为0）：这是默认策略，对于CronTrigger来说，它等同于`MISFIRE_INSTRUCTION_FIRE_ONCE_NOW`。
+2. `MISFIRE_INSTRUCTION_DO_NOTHING`（值为2）：不触发立即执行，等待下次Cron触发频率到达时刻开始按照Cron频率依次执行。
+3. `MISFIRE_INSTRUCTION_IGNORE_MISFIRE_POLICY`（值为-1）：以错过的第一个频率时间立刻开始执行，重做错过的所有频率周期，然后按照正常的Cron频率依次执行。
+4. `MISFIRE_INSTRUCTION_FIRE_ONCE_NOW`（值为1）：以当前时间为触发频率立刻触发一次执行，然后按照Cron频率依次执行。
+
+## Simple任务
+
+
 
 # 中断执行策略
 
