@@ -223,19 +223,157 @@ Trigger trigger = TriggerBuilder.newTrigger()
 
 对于Cron任务来说，创建任务之后，在`qrtz_job_details`、`qrtz_cron_triggers`和`qrtz_triggers`会分别插一条记录。创建任务的代码如下所示：
 
+```Java
+/**
+  * 创建cron任务
+  * @param jobClass 执行类
+  * @param jobName 任务名
+  * @param jobGroup 任务组
+  * @param cronExpression cron表达式
+  * @param desc 描述
+  * @param params 附加参数
+  * @return
+  */
+public boolean addJob(Class<? extends Job> jobClass, String jobName, String jobGroup, String cronExpression, String desc, Map<String, Object> params) {
+    try {
+        if (isExistJob(jobName, jobGroup)) {
+            log.error("批量作业已存在，jobName={}", jobName);
+            return false;
+        }
 
+        JobDetail jobDetail = JobBuilder
+            .newJob(jobClass)
+            .storeDurably()
+            .requestRecovery()
+            .withIdentity(jobName, jobGroup)
+            .withDescription(StringUtils.substring(desc, 0, 250))
+            .build();
+
+        if (params != null && !params.isEmpty()) {
+            params.put(Constants.JOB_NAME, jobName);
+            jobDetail.getJobDataMap().putAll(params);
+        }
+
+        CronTrigger cronTrigger = TriggerBuilder
+            .newTrigger()
+            .withIdentity(TriggerKey.triggerKey(jobName, jobGroup))
+            .withSchedule(CronScheduleBuilder.cronSchedule(cronExpression))
+            .withPriority(5)
+            .build();
+        log.info("cron默认的错过策略是：{}", cronTrigger.getMisfireInstruction());
+
+        scheduler.scheduleJob(jobDetail, cronTrigger);
+        return true;
+    } catch (SchedulerException e) {
+        log.error("创建任务失败", e);
+        return false;
+    }
+}
+```
 
 ### Simple任务
 
 对于Simple任务来说，创建任务之后，在`qrtz_job_details`、`qrtz_simple_triggers`和`qrtz_triggers`会分别插一条记录。下面代码演示的是指定固定时间的跑批任务，**待任务执行之后，该任务在上面三张表的记录在会被自动清除**。
 
+```Java
+/**
+  * 创建simple任务
+  * @param jobClass 执行任务的实际类
+  * @param jobName 任务名称
+  * @param jobGroup 任务组
+  * @param desc 任务描述
+  * @param dataMap 附加信息
+  * @param startTime 任务开始执行时间
+  * @return
+  */
+public boolean addJob(Class<? extends Job> jobClass, String jobName, String jobGroup, String desc, Map<String, Object> dataMap, Date startTime) {
 
+    try {
+        if (isExistJob(jobName, jobGroup)) {
+            log.error("批量已经存在，jobName={}, jobGroup={}", jobName, jobGroup);
+            return true;
+        }
+
+        JobDetail jobDetail = JobBuilder
+            .newJob(jobClass)
+            .storeDurably()
+            .requestRecovery()
+            .withIdentity(jobName, jobGroup)
+            .withDescription(StringUtils.substring(desc, 0 , 250))
+            .build();
+
+        if (dataMap != null && !dataMap.isEmpty()) {
+            jobDetail.getJobDataMap().putAll(dataMap);
+        }
+
+        SimpleTrigger simpleTrigger = TriggerBuilder.newTrigger()
+            .forJob(jobName)
+            .withIdentity(TriggerKey.triggerKey(jobName, jobGroup))
+            .startAt(startTime)
+            .withSchedule(SimpleScheduleBuilder.simpleSchedule().withMisfireHandlingInstructionFireNow())
+            .build();
+
+        log.info("重复次数：{}, 错过执行的策略：{}", simpleTrigger.getRepeatCount(), simpleTrigger.getMisfireInstruction());
+        scheduler.scheduleJob(jobDetail, simpleTrigger);
+        log.info("批量：{}, 执行时间：{}, 创建成功", jobName, DatetimeUtil.dateToStr(startTime));
+        return true;
+    } catch (ObjectAlreadyExistsException e) {
+        log.error("重复创建批量，jobName={}, jobGroup={}", jobName, jobGroup);
+    } catch (SchedulerException e) {
+        log.error("创建批量异常", e);
+    }
+    return false;
+}
+```
 
 ## 暂停批量
 
 暂停任务只是将`qrtz_triggers`表的`trigger_state`字段更新为`PAUSED`或是`PAUSED_BLOCKED`。**无论是Simple任务还是****Cron****任务，任务已经开始执行的任务线程不会停止**。对于Simple任务来说任务开始执行之后`trigger_state`字段就被置为`COMPLETE`。暂停任务的代码对于这两种类型的任务都是一样的，代码如下：
 
+```Java
+/**
+ * 暂停批量
+ * @param jobName 批量名称
+ * @param jobGroup 批量组
+ * @return
+ */
+public boolean pauseJob(String jobName, String jobGroup) {
+    if (!isExistJob(jobName, jobGroup)) {
+        log.info("批量不存在，jobName:{}, jobGroup:{}", jobName, jobGroup);
+        return false;
+    }
 
+    try {
+        scheduler.pauseJob(JobKey.jobKey(jobName, jobGroup));
+        return true;
+    } catch (SchedulerException e) {
+        log.error("暂停批量失败", e);
+        return false;
+    }
+}
+
+
+/**
+ * 恢复批量
+ * @param jobName 批量名称
+ * @param jobGroup 批量组
+ * @return
+ */
+public boolean resumeJob(String jobName, String jobGroup) {
+    if (!isExistJob(jobName, jobGroup)) {
+        log.info("批量不存在，jobName:{}, jobGroup:{}", jobName, jobGroup);
+        return false;
+    }
+
+    try {
+        scheduler.resumeJob(JobKey.jobKey(jobName, jobGroup));
+        return true;
+    } catch (SchedulerException e) {
+        log.error("恢复批量出现异常", e);
+        return false;
+    }
+}
+```
 
 ## 删除批量
 
@@ -243,7 +381,32 @@ Trigger trigger = TriggerBuilder.newTrigger()
 
 删除任务的代码对于这两种类型的任务都是一样的，代码如下：
 
+```Java
+/**
+ * 删除批量
+ * @param jobName 批量名称
+ * @param jobGroup 批量组
+ * @return
+ */
+public boolean deleteJob(String jobName, String jobGroup) {
+    if (!isExistJob(jobName, jobGroup)) {
+        log.info("批量不存在，jobName:{}, jobGroup:{}", jobName, jobGroup);
+        return false;
+    }
 
+    TriggerKey triggerKey = new TriggerKey(jobName, jobGroup);
+    try {
+        scheduler.pauseTrigger(triggerKey);
+        scheduler.unscheduleJob(triggerKey);
+        scheduler.deleteJob(JobKey.jobKey(jobName, jobGroup));
+        log.info("批量删除成功jobName:{}, jobGroup:{}", jobName, jobGroup);
+        return true;
+    } catch (SchedulerException e) {
+        log.error("删除批量任务出现异常", e);
+        return false;
+    }
+}
+```
 
 # 错过执行策略
 
@@ -268,7 +431,7 @@ Trigger trigger = TriggerBuilder.newTrigger()
 
 # 参考项目
 
-- depers/quartz-dynamic-job
+- [depers/quartz-dynamic-job](https://github.com/depers/JavaMall/tree/master/quartz/quartz-dynamic-job)
 
 # 参考文字
 
