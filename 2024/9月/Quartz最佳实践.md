@@ -410,20 +410,37 @@ public boolean deleteJob(String jobName, String jobGroup) {
 
 # 错过执行策略
 
-在前面的章节中我们提到过`org.quatz.jobStore.misfireThreshold`配置项，他的作用是设置一个批量错过触发时间的最大阈值，如果超过这个时间才认定这个批量错过执行了。接着会根据**错过执行的处理策略**来判断是否继续执行该批量，下面就让我们一起讨论下这块逻辑。
+Quartz在如下情况下可能没有办法按时执行job：
+
+1. 所有的worker线程都处于忙碌状态（可能在执行更高优先级的任务）
+2. Quartz scheduler挂掉了
+3. 这个任务的开始执行时间就是在过去（可能是创建时候配置错了）
+
+在前面的章节中我们提到过`org.quatz.jobStore.misfireThreshold`配置项，他的作用是设置一个批量错过触发时间的最大阈值，如果在原计划执行时间后超过这个时间才认定这个批量错过执行了。接着会根据**错过执行的处理策略**来判断是否继续执行该批量，下面就让我们一起讨论下这块逻辑。
+
+为了方便演示这几种不同的情况，我首先是在单元测试中按照下面不同的策略去新建Job，然后关闭调度器，等Job错过其执行时间之后，启动项目。我的单元测试代码如下：
 
 ## Cron任务
 
 对于Cron任务来说，他有四种错过执行的处理策略：
 
 1. `MISFIRE_INSTRUCTION_SMART_POLICY`（值为0）：这是默认策略，对于CronTrigger来说，它等同于`MISFIRE_INSTRUCTION_FIRE_ONCE_NOW`。
-2. `MISFIRE_INSTRUCTION_DO_NOTHING`（值为2）：不触发立即执行，等待下次Cron触发频率到达时刻开始按照Cron频率依次执行。
-3. `MISFIRE_INSTRUCTION_IGNORE_MISFIRE_POLICY`（值为-1）：以错过的第一个频率时间立刻开始执行，重做错过的所有频率周期，然后按照正常的Cron频率依次执行。
-4. `MISFIRE_INSTRUCTION_FIRE_ONCE_NOW`（值为1）：以当前时间为触发频率立刻触发一次执行，然后按照Cron频率依次执行。
+2. `MISFIRE_INSTRUCTION_DO_NOTHING`（值为2）：不触发立即执行，等待下次Cron触发频率到达时刻开始按照Cron频率依次执行。通俗一点来说就是**啥都不干，等Cron表达式的声明正常执行**。
+3. `MISFIRE_INSTRUCTION_IGNORE_MISFIRE_POLICY`（值为-1）：以错过的第一个频率时间立刻开始执行，重做错过的所有频率周期，然后按照正常的Cron频率依次执行。通俗一点来说就是**在调度器正常后，会将之前错过的所有批次全部执行一遍，然后再正常去调度，这种策略还是慎用**。
+4. `MISFIRE_INSTRUCTION_FIRE_ONCE_NOW`（值为1）：以当前时间为触发频率立刻触发一次执行，然后按照Cron频率依次执行。通俗一点来说就是**如果一个任务错过执行一次或是多次，在调度器启动之后立刻将该任务执行一次，然后按照Cron表达式的声明正常去调度**。
 
 ## Simple任务
 
-
+1. `MISFIRE_INSTRUCTION_SMART_POLICY` collapsed:: true
+    1. 若`Repeat Count = 0`：会选择`MISFIRE_INSTRUCTION_FIRE_NOW`，系统恢复后立刻执行。对于不会重复执行的任务，这是默认的处理策略。
+    2. 若`Repeat Count > 0`：会选择`MISFIRE_INSTRUCTION_RESCHEDULE_NEXT_WITH_REMAINING_COUNT`，系统恢复后立刻执行并执行指定的次数。
+    3. 若`Repeat Count = REPEAT_INDEFINITELY`【无限重复】：`MISFIRE_INSTRUCTION_RESCHEDULE_NEXT_WITH_REMAINING_COUNT`，系统恢复后在下一个激活点执行，且超时期内错过的执行机会作废。
+2. `MISFIRE_INSTRUCTION_FIRE_NOW`：无论任务是否misFire，项目重启后都会立刻执行。对于不会重复执行的任务，这是默认的处理策略。
+3. `MISFIRE_INSTRUCTION_RESCHEDULE_NEXT_WITH_REMAINING_COUNT`：在下一个激活点执行，且超时期内错过的执行机会作废。
+4. `MISFIRE_INSTRUCTION_RESCHEDULE_NOW_WITH_REMAINING_COUNT`：立即执行，且超时期内错过的执行机会作废。
+5. `MISFIRE_INSTRUCTION_RESCHEDULE_NEXT_WITH_EXISTING_COUNT`：在下一个激活点执行，并重复到指定的次数。
+6. `MISFIRE_INSTRUCTION_RESCHEDULE_NOW_WITH_EXISTING_COUNT`：立即执行，并重复到指定的次数。
+7. `MISFIRE_INSTRUCTION_IGNORE_MISFIRE_POLICY`：忽略所有的超时状态，按照触发器的策略执行。
 
 # 中断执行策略
 
@@ -432,6 +449,7 @@ public boolean deleteJob(String jobName, String jobGroup) {
 # 参考项目
 
 - [depers/quartz-dynamic-job](https://github.com/depers/JavaMall/tree/master/quartz/quartz-dynamic-job)
+- depers/quartz-misfire
 
 # 参考文字
 
