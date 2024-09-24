@@ -437,7 +437,7 @@ Quartz在如下情况下可能没有办法按时执行job：
     2. 若Repeat Count>0：会选择`MISFIRE_INSTRUCTION_RESCHEDULE_NOW_WITH_EXISTING_REPEAT_COUNT`，系统恢复后立刻执行并执行指定的次数。
     3. 若Repeat Count=REPEAT_INDEFINITELY;【无限重复】：`MISFIRE_INSTRUCTION_RESCHEDULE_NEXT_WITH_REMAINING_COUNT`，系统恢复后在下一个激活点执行，且超时期内错过的执行机会作废。
 
-2. `MISFIRE_INSTRUCTION_FIRE_NOW`(值为1)：项目重启后都会立刻执行。**这种策略适合一次性任务，也就是不会重复（Repeat Count=0）的任务**。如果**Repeat Count > 0，该策略的效果和****`MISFIRE_INSTRUCTION_RESCHEDULE_NOW_WITH_REMAINING_REPEAT_COUNT`****的效果是一致的。**
+2. `MISFIRE_INSTRUCTION_FIRE_NOW`(值为1)：项目重启后都会立刻执行。**这种策略适合一次性任务，也就是不会重复（Repeat Count=0）的任务**。如果**Repeat Count > 0，该策略的效果和`MISFIRE_INSTRUCTION_RESCHEDULE_NOW_WITH_REMAINING_REPEAT_COUNT`的效果是一致的。**
 
 3. `MISFIRE_INSTRUCTION_RESCHEDULE_NOW_WITH_EXISTING_REPEAT_COUNT`(值为2）：立即执行，并重复到指定的次数。这种策略思路就很简单，逻辑如下：
 
