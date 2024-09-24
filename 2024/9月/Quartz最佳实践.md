@@ -328,7 +328,7 @@ public boolean addJob(Class<? extends Job> jobClass, String jobName, String jobG
 
 ## 暂停批量
 
-暂停任务只是将`qrtz_triggers`表的`trigger_state`字段更新为`PAUSED`或是`PAUSED_BLOCKED`。**无论是Simple任务还是****Cron****任务，任务已经开始执行的任务线程不会停止**。对于Simple任务来说任务开始执行之后`trigger_state`字段就被置为`COMPLETE`。暂停任务的代码对于这两种类型的任务都是一样的，代码如下：
+暂停任务只是将`qrtz_triggers`表的`trigger_state`字段更新为`PAUSED`或是`PAUSED_BLOCKED`。**无论是Simple任务还是Cron任务，任务已经开始执行的任务线程不会停止**。对于Simple任务来说任务开始执行之后`trigger_state`字段就被置为`COMPLETE`。暂停任务的代码对于这两种类型的任务都是一样的，代码如下：
 
 ```Java
 /**
@@ -431,16 +431,55 @@ Quartz在如下情况下可能没有办法按时执行job：
 
 ## Simple任务
 
-1. `MISFIRE_INSTRUCTION_SMART_POLICY` collapsed:: true
-    1. 若`Repeat Count = 0`：会选择`MISFIRE_INSTRUCTION_FIRE_NOW`，系统恢复后立刻执行。对于不会重复执行的任务，这是默认的处理策略。
-    2. 若`Repeat Count > 0`：会选择`MISFIRE_INSTRUCTION_RESCHEDULE_NEXT_WITH_REMAINING_COUNT`，系统恢复后立刻执行并执行指定的次数。
-    3. 若`Repeat Count = REPEAT_INDEFINITELY`【无限重复】：`MISFIRE_INSTRUCTION_RESCHEDULE_NEXT_WITH_REMAINING_COUNT`，系统恢复后在下一个激活点执行，且超时期内错过的执行机会作废。
-2. `MISFIRE_INSTRUCTION_FIRE_NOW`：无论任务是否misFire，项目重启后都会立刻执行。对于不会重复执行的任务，这是默认的处理策略。
-3. `MISFIRE_INSTRUCTION_RESCHEDULE_NEXT_WITH_REMAINING_COUNT`：在下一个激活点执行，且超时期内错过的执行机会作废。
-4. `MISFIRE_INSTRUCTION_RESCHEDULE_NOW_WITH_REMAINING_COUNT`：立即执行，且超时期内错过的执行机会作废。
-5. `MISFIRE_INSTRUCTION_RESCHEDULE_NEXT_WITH_EXISTING_COUNT`：在下一个激活点执行，并重复到指定的次数。
-6. `MISFIRE_INSTRUCTION_RESCHEDULE_NOW_WITH_EXISTING_COUNT`：立即执行，并重复到指定的次数。
-7. `MISFIRE_INSTRUCTION_IGNORE_MISFIRE_POLICY`：忽略所有的超时状态，按照触发器的策略执行。
+1. `MISFIRE_INSTRUCTION_SMART_POLICY`（值为0） collapsed:: true
+
+    1. 若Repeat Count=0：会选择`MISFIRE_INSTRUCTION_FIRE_NOW`，系统恢复后立刻执行。对于不会重复执行的任务，这是默认的处理策略。
+    2. 若Repeat Count>0：会选择`MISFIRE_INSTRUCTION_RESCHEDULE_NOW_WITH_EXISTING_REPEAT_COUNT`，系统恢复后立刻执行并执行指定的次数。
+    3. 若Repeat Count=REPEAT_INDEFINITELY;【无限重复】：`MISFIRE_INSTRUCTION_RESCHEDULE_NEXT_WITH_REMAINING_COUNT`，系统恢复后在下一个激活点执行，且超时期内错过的执行机会作废。
+
+2. `MISFIRE_INSTRUCTION_FIRE_NOW`(值为1)：项目重启后都会立刻执行。**这种策略适合一次性任务，也就是不会重复（Repeat Count=0）的任务**。如果**Repeat Count > 0，该策略的效果和****`MISFIRE_INSTRUCTION_RESCHEDULE_NOW_WITH_REMAINING_REPEAT_COUNT`****的效果是一致的。**
+
+3. `MISFIRE_INSTRUCTION_RESCHEDULE_NOW_WITH_EXISTING_REPEAT_COUNT`(值为2）：立即执行，并重复到指定的次数。这种策略思路就很简单，逻辑如下：
+
+    1. **立即执行**：触发器会立即触发一次。
+    2. **保留原有重复次数**：执行后，触发器的重复次数保持不变，即不会因为错过而减少应该执行的次数。
+    3. **重新计算下一次执行时间**：根据触发器的间隔和刚刚执行的时间点来计算下一次的执行时间。
+    4.  举个例子，就比如我制定了一个任务，每隔5秒执行一次，重复3次。任务刚建好之后就停机了。重新启动之后，会立马执行一次，这一次不算在重复次数里面。接着调度器会重新计算下次的执行时间，按照每5秒的节奏执行分别执行三次任务。
+
+4. `MISFIRE_INSTRUCTION_RESCHEDULE_NOW_WITH_REMAINING_REPEAT_COUNT`（值为3）：立即执行，且超时期内错过的执行机会作废。
+
+    这个策略有三种逻辑：
+
+    1. **立即执行**：触发器会立即触发一次。
+    2. **剩余重复次数**：执行后，触发器的重复次数会更新为剩余的次数，而不是原来的总数。
+    3. **忽略错过的执行**：在计算下一次执行时间时，会忽略在misfire期间错过的执行次数。
+
+    上面的三点，第一点很好理解，第二点和第三点没懂。通过debug代码发现，剩余次数的计算逻辑如下：
+
+    1.  **剩余的执行次数=设置的重复次数-已经触发的次数+计算触发的总数**（当前时间-上次执行计算好的下次触发时间，然后除以间隔时间），按照上面的这种算法如果当前时间-上次执行计算好的下次触发时间过大，也就是错过的时间很长的情况下，最后算出来的剩余的执行次数就会是负数，也就是说剩余有效地执行次数是0，默认项目恢复后只会执行一次。
+    2.  这段逻辑的代码在`org.quartz.impl.triggers.SimpleTriggerImpl.updateAfterMisfire(Calendar cal)`方法中。
+
+5. `MISFIRE_INSTRUCTION_RESCHEDULE_NEXT_WITH_REMAINING_COUNT`（值为4）：在下一个激活点执行，且超时期内错过的执行机会作废。相比于`MISFIRE_INSTRUCTION_RESCHEDULE_NOW_WITH_REMAINING_REPEAT_COUNT`少了启动后立马执行一次的逻辑。
+
+    当触发器错过预定的触发时间时，**如果当前时间已经超过了预定的结束时间**，该策略会导致触发器不再触发。**如果当前时间没有超过结束时间**，该策略会忽略所有错过的触发次数，将下一次触发时间设置为根据原始频率计算出的下一个触发时间，并继续执行剩余的触发次数。这个策略很清晰，不再多做赘述。
+
+6. `MISFIRE_INSTRUCTION_RESCHEDULE_NEXT_WITH_EXISTING_COUNT`（值为5）：在下一个激活点执行，并重复到指定的次数。这个策略相比于`MISFIRE_INSTRUCTION_RESCHEDULE_NOW_WITH_EXISTING_REPEAT_COUNT`少了启动后立马执行一次的逻辑。
+
+    这个策略的三种逻辑：
+
+    1. **不立即执行**：当触发器错过预定的触发时间时，不会立即执行任务。
+    2. **等待下一次预定的触发时间**：触发器会等待直到下一个预定的触发时间点。
+    3. **保持原有的重复次数**：在下一个触发时间点，触发器会执行任务，并保持原有的重复次数不变。
+
+7. `MISFIRE_INSTRUCTION_IGNORE_MISFIRE_POLICY`（值为-1）：忽略所有的超时状态，按照触发器的策略执行。
+
+    **这个策略有点特别，第一它不会启动后立刻执行，第二他会补充执行之前错过的任务，第三他会按照原有设置继续执行**。
+
+    这个策略的三个逻辑如下：
+
+    1. **立即开始执行**：从错过的第一个触发时间点开始，立即执行任务。
+    2. **重做所有错过的周期**：在计算出下一个触发时间点之前，会执行所有因为错失而未执行的任务。
+    3. **继续正常计划**：完成所有错过周期的执行后，如果下一个预定的触发时间点大于当前时间，则会继续按照触发器的原有频率执行后续的任务。
 
 # 中断执行策略
 
