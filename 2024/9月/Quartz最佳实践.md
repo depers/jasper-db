@@ -483,12 +483,66 @@ Quartz在如下情况下可能没有办法按时执行job：
 
 # 中断执行策略
 
+在Quartz调度器中，`JobDetail`的`requestsRecovery`属性非常重要。它的作用是指示调度器（Scheduler），在遇到“恢复”或“故障转移”情况时，是否应该重新执行作业（Job）。如果作业在执行过程中，调度器发生了严重的错误或者崩溃，导致作业执行被中断，当调度器重新启动后，如果`requestsRecovery`属性被设置为`true`，那么这个作业将会被重新执行。
+
+默认情况下，如果未明确设置，`requestsRecovery`的值是`false`。这意味着，如果作业在执行中遇到调度器的崩溃，除非明确指定，否则重启调度器后不会自动重新执行该作业。
+
+这个属性对于确保作业的可靠性和数据的一致性非常关键，特别是对于那些关键任务，需要保证即使在调度器出现故障的情况下也能被正确处理。
+
+上面是比较正式的描述，通俗来说就是在一台服务器执行一个批量的时候，如果此时突然这个服务器宕机了，这个批量的执行就中断了，如果我们将`JobDetail`的`requestsRecovery`属性设置为`true`，在集群环境中会有故障转移的逻辑，该批量会由其他服务器去执行，如果在非集群环境下，该批量会在服务器恢复的时候重新执行。
+
+这个配置与上面我们提到的错过执行的处理策略是两个东西，因为他们的前置原因不同。说到具体的生产环境中：
+
+1. **如果批量任务是需要及时执行的，而且该任务可以重复执行，那么`requestsRecovery`属性应该设置为`true`。**
+2. **如果批量任务是需要及时执行的，但该任务不能重复执行，因为上次任务中断的时候，可能原有的逻辑已经执行了一半，如果再重复执行可能会有问题，比如批量扣款等操作，在这种情况下`requestsRecovery`属性应该设置为`false`。**
+
 # 执行线程不足的情况下，批量任务该如何执行
+
+在quartz中有三个线程，分别是：
+
+- **QuartzSchedulerThread本机任务调度主线程：负责任务的调度执行。**
+- **ClusterManager集群调度线程：负责将本节点的情况更新到数据库中并进行集群的监控。**
+- **MisfireHander错过执行线程：监控错过执行的批量，对其进行补偿执行。**
+
+关于这块逻辑我们可以从`org.quartz.simpl.SimpleThreadPool.runInThread(Runnable runnable)`中看到一些端倪，这个逻辑是由`org.quartz.core.QuartzSchedulerThread.run()`方法触发的，这个是quartz的主线程的逻辑，这里只对其中一小块逻辑进行分析。
+
+在`org.quartz.core.QuartzSchedulerThread.run()`方法中，我们只看关键的代码，其余代码逻辑大家自行阅读：
+
+1. 在这段代码中首先判断了线程池中可用的工作线程数有多少。
+
+    ```Java
+    int availThreadCount = qsRsrcs.getThreadPool().blockForAvailableThreads();
+    ```
+
+2. 接着我们看blockForAvailableThreads()方法的逻辑，在下面的代码中在**线程数****小于1**或是**正在将任务移交工作线程的时候**，当前线程就会被阻塞：
+
+    ```Java
+    public int blockForAvailableThreads() {
+        synchronized(nextRunnableLock) {
+    
+            // availWorkers.size()是可用工作线程的数量
+            // handoffPending 翻译过来的意思是“移交待定”，这个参数在主线程将任务移交给工作线程的时候会置为true，也就是说主线程在将任务移交给工作线程的时候，handoffPending会置为true
+            while((availWorkers.size() < 1 || handoffPending) && !isShutdown) {
+                try {
+                    nextRunnableLock.wait(500);
+                } catch (InterruptedException ignore) {
+                }
+            }
+    
+            return availWorkers.size();
+        }
+    }
+    ```
+
+看完上面的分析我们就可以知道，比如同一秒有3个跑批任务去执行，但是我的可用工作线程就只有2个，那么主线程在将任务分配给工作线程的时候就会被阻塞，等有可用的工作线程的时候，主线程分配的逻辑才会继续执行。
+
+这里`org.quartz.core.QuartzSchedulerThread.run()`的逻辑有点复杂，后续我再开文章来分析这块内容吧，按照上述的逻辑如果主线程因工作线程不够一直被阻塞，这里会一直被阻塞，直到有可用的工作线程，这样没有被执行的任务就会被执行。所以结论就是**因工作线程不够导致的任务阻塞没有被执行的问题，迟早会被执行，这个要看是否有可用的工作线程，这个逻辑是通过阻塞主线程来实现的。**
 
 # 参考项目
 
 - [depers/quartz-dynamic-job](https://github.com/depers/JavaMall/tree/master/quartz/quartz-dynamic-job)
 - depers/quartz-misfire
+- [quartz-scheduler/quartz](https://github.hscsec.cn/quartz-scheduler/quartz)
 
 # 参考文字
 
