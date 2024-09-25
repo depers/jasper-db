@@ -108,6 +108,16 @@
 - `initialBytesToStrip=0`：因为我们的消息正文中包含了长度字段，所以不允许跳过长度字段。
 - `failFast=true`：严格控制解码器的异常逻辑。
 
+# 通过LengthFieldPrepender设置响应报文的长度
+
+在Netty中，`LengthFieldPrepender`是一个编码器（Encoder），它的作用是在消息的开始处添加一个固定长度的字段，用于指示随后消息体的长度。
+
+这个类有三个参数：
+
+1. **lengthFieldLength**：指示长度字段的字节数，常见的值有1、2、3、4、8等。
+2. **lengthIncludesLengthFieldLength**：一个布尔值，指示长度字段是否包含它自身的大小。
+3. **lengthAdjustment**：一个整数，用于调整长度字段的值，通常用于协议中长度字段包含了额外的头部信息时。
+
 # 参考项目
 
 - depers/netty-handler
