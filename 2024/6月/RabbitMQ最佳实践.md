@@ -55,7 +55,7 @@
 
 ## 2. 如何在Broker中保证消息能够从交换机投递到队列
 
- 为了保证将消息从交换机顺利地投递到队列中，RabbitMQ提供了mandatory机制，用于控制一个消息到达交换机器时，**交换器****根据自身类型和路由键找不到一个符合条件的队列**，若该参数设置为`true`就将该消息返回给生产者，如果为`false`，就将消息丢弃。我们来看具体代码：
+ 为了保证将消息从交换机顺利地投递到队列中，RabbitMQ提供了mandatory机制，用于控制一个消息到达交换机器时，**交换器根据自身类型和路由键找不到一个符合条件的队列**，若该参数设置为`true`就将该消息返回给生产者，如果为`false`，就将消息丢弃。我们来看具体代码：
 
 1. 先看配置：
 
@@ -71,7 +71,7 @@
 
 2. 设置RabbitTemplate的`setReturnCallback()`方法设置路由失败后的回调方法：
 
-    使用建议：**消息发送时没有必要设置mandotory**，因为Spring Boot和RabbitMQ的集成后，我发现即便是exchage找不到对应的queue后，生产端不仅在`rabbitTemplate`的`ReturnsCallback`中做了返回，而且还在`ConfirmCallback`中也做了`ack`的确认，两个地方同时做了返回，所以我们并不能区分到底成功与否，所以这里其实作用不大，这就需要我们在项目启动的时候做好`exchange`、`queue`和`binding`的创建。
+使用建议：**消息发送时没有必要设置mandotory**，因为Spring Boot和RabbitMQ的集成后，我发现即便是exchage找不到对应的queue后，生产端不仅在`rabbitTemplate`的`ReturnsCallback`中做了返回，而且还在`ConfirmCallback`中也做了`ack`的确认，两个地方同时做了返回，所以我们并不能区分到底成功与否，所以这里其实作用不大，这就需要我们在项目启动的时候做好`exchange`、`queue`和`binding`的创建。
 
 ## 3. 如何保证消息在 RabbitMQ Server 中不丢失
 
