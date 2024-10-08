@@ -132,12 +132,12 @@
 
 1. 首先我们来看配置文件：
 
-    ```YAML
+    ```yaml
     spring:
-    	rabbitmq:
-    		listener:
-    			simple:
-    				acknowledge-mode: manual  # 全局开启手动确认消费机制
+      rabbitmq:
+        listener:
+          simple:
+            acknowledge-mode: manual  # 全局开启手动确认消费机制
     ```
 
 2. 消费端消费代码：
