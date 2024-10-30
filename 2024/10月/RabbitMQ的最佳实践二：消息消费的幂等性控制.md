@@ -241,9 +241,9 @@ public class ReplayProtection {
             throw new BusinessException(ExceptionEnum.REPLAY_PROTECT_REPEAT_ERROR);
         }
         TreeMap<String, String> sortedMap = new TreeMap<>();
-        requestParams.entrySet().stream().filter(entry -> Objects.nonNull(entry.getValue()) && Objects.nonNull(entry.getKey())).forEach(entry ->
-                                                                                                                                        sortedMap.put(entry.getKey(), String.valueOf(entry.getValue())));
-
+        requestParams.entrySet().stream()
+            .filter(entry -> Objects.nonNull(entry.getValue()) && Objects.nonNull(entry.getKey()))
+            .forEach(entry -> sortedMap.put(entry.getKey(), String.valueOf(entry.getValue())));
 
         // 将头信息也放进去
         sortedMap.put("timestamp", timestamp);
