@@ -54,7 +54,7 @@
 - 根据特定的一个或多个业务字段使用md5生成的token
 - 特定的业务字段本身就是唯一的，比如订单的id
 
-大家可以看到上面两个思路用到的都是业务相关字段生成的标记，也有人说直接用uuid不行吗？我觉得直接使用uuid这种随机无状态的标记是有问题的，比如新增一个商品，如果使用uuid来做标记，那么同一个商品就有可能会被新增两次，所以**幂等性的标记必须和业务字段相关才行**。
+大家可以看到上面两个思路用到的都是业务相关字段生成的标记，也有人说直接用uuid不行吗？我觉得直接使用uuid这种随机无状态的标记是有问题的，比如新增一个商品，如果使用uuid来做标记，那么同一个商品就有可能会被新增两次，所以**幂等性的标记必须和业务字段相关才行，或者说同一个商品在新增之前就生成好了他的id，多次点击保存id是相同的，但是不能在每次新增的时候都重新生成**。
 
 接着就是**存储，实现存储的方案有很多，最常见的就是数据库和缓存**，比如MySQL和Redis。
 
@@ -102,6 +102,8 @@ public @interface Idempotent {
 
 如果入库正常则执行具体的接口逻辑，但是如果接口逻辑执行出现异常，这里就涉及到是否允许用户再次调用。如果允许用户再次调用，接口中需要抛出特定的异常，接着被该切面捕获，接着删除去重表中的这条记录；如果不允许，则接口不要抛出特定的异常，也就不允许用户再次调用。
 
+采用数据库去重表的优点：**实现简单**，缺点：**会占用大量的存储空间**，因为随着业务数据的增多，之前的业务数据可能无需再进行去重处理了，比如一个订单支付接口，距离第一次请求已经一个月了，再次被调用，此时订单的状态已经发生了变化，即便是重复请求再业务逻辑层面也会被拦截。如果我们还保留之前的去重表数据，就会浪费数据库的存储空间。
+
 这种方法是通用的幂等性控制方法，也就是上面的post、put和delete的幂等性问题都可以得到解决。
 
 2. **方法二：Redis去重**
@@ -109,6 +111,8 @@ public @interface Idempotent {
 常用的数据存储中，除了数据库就是Redis了，和方法一一样，我们在切面逻辑中可以将数据库入库的动作切换成Redis的`SETNX`操作，`SETNX` 是一个原子性命令，用于设置键值对，但只在键不存在的情况下。它的全称是 "SET if not exists"。这个命令通常用于实现分布式锁或者确保某个值的唯一性。如果键 `key` 不存在，那么 `SETNX` 会设置键 `key` 的值，并返回 `1` 表示操作成功。如果键 `key` 已经存在，那么 `SETNX` 命令不做任何操作，并返回 `0` 表示操作失败。
 
 值得注意的是在Redis中存储数据需要为键值对设置有效时间 ，从而防止内存占用过高，浪费内存的情况。所以这里建议如果针对幂等性控制的键值对应该根据具体的情况来进行设置。
+
+采用Redis去重的优点：**一实现简单；二不会占用大量的空间**，因为每条去重数据都会被加上有效时间。缺点：**引入了新的组件，给系统的可用性增加复杂度**。
 
 这种方法也是通用的幂等性控制方法，也就是上面的post、put和delete的幂等性问题都可以得到解决。
 
@@ -135,7 +139,7 @@ public @interface Idempotent {
 假设我们的更新的sql如下，我们需要将小米手机的价格增加50块钱：
 
 ```SQL
-update my_table set price=price+50, version=version+1 where id=1 and version=2
+update my_table set price = price + 50, version = version + 1 where id = 1 and version = 2;
 ```
 
 上面 `WHERE` 后面跟着条件 `id=1 AND version=5` 被执行后，`id=1` 的 `version` 被更新为 `6`，所以如果重复执行该条 SQL 语句将不生效，因为 `id=1 AND version=5` 的数据已经不存在，这样就能保住更新的幂等性，多次更新对结果不会产生影响。
@@ -180,19 +184,145 @@ update my_table set price=price+50, version=version+1 where id=1 and version=2
 
 在具体的项目开发中，我们一般会使用`时间戳`+`随机数`的方式来实现一个简单的重放攻击拦截器。时间戳和随机数互补，既能在时间有效范围内通过校验缓存中的随机数是否存在来分辨是否为重放请求，也能够减小大量重放数据的存储。
 
-**防重放逻辑的实现主要有五部分，第一是参数校验，第二是验证时间戳，第三步判断随机数nonce是否已经存在，第四步是生成签名进行比较，第五步是将随机数nonce保存到redis中。**具体的代码实现参考下面的代码：
+**防重放逻辑的实现主要有五部分，第一是参数校验，第二是验证时间戳，第三步判断随机数nonce是否已经存在，第四步是生成签名进行比较，第五步是将随机数nonce保存到redis中** 。具体的代码实现参考下面的代码：
 
-```Plain
+```Java
+@Slf4j
+public class ReplayProtection {
 
+    private volatile static ReplayProtection instance = null;
+    private final String secret = "";
+
+    private ReplayProtection() {
+        log.info("防重放组件初始化");
+    }
+
+    public static ReplayProtection getInstance() {
+        if (instance == null) {
+            synchronized (ReplayProtection.class) {
+                if (instance == null) {
+                    instance = new ReplayProtection();
+                }
+            }
+        }
+        return instance;
+    }
+
+    private String generatesign(TreeMap<String, String> param) {
+        StringBuilder stringBuilder = new StringBuilder();
+        param.forEach((key, value) -> stringBuilder.append(key).append("=").append(value).append("&"));
+        stringBuilder.append("secret=").append(secret);
+        log.info("未哈希的字符中{}", stringBuilder);
+        return DigestUtil.md5Hex16(stringBuilder.toString());
+    }
+
+    public void validateSign(String timestamp, String nonce, String sign, Map<String, Object> requestParams) {
+        if (StringUtils.isBlank(sign)) {
+            log.error("签名不能为空");
+            throw new BusinessException(ExceptionEnum.REPLAY_PROTECT_PARAM_ERROR);
+        }
+        if (StringUtils.isBlank(nonce)) {
+            log.error("随机数不能为空");
+            throw new BusinessException(ExceptionEnum.REPLAY_PROTECT_PARAM_ERROR);
+        }
+        if (StringUtils.isBlank(timestamp)) {
+            log.error("时间戳不能为空");
+            throw new BusinessException(ExceptionEnum.REPLAY_PROTECT_PARAM_ERROR);
+        }
+        Long timestampLong = Long.parseLong(timestamp);
+        if (timestampLong - System.currentTimeMillis() > 60000) {
+            log.info("时间戳已过期, timestamp={}", timestamp);
+            throw new BusinessException(ExceptionEnum.REPLAY_PROTECT_SIGN_OVERDUE_ERROR);
+        }
+        String key = String.format(RedisKey.REPLAY_PROTECT_NONCE.getKey(), nonce);
+        RedissonUtils redissonutils = (RedissonUtils) SpringContextUtil.getBean(RedissonUtils.class);
+        if (redissonutils.get(key) != null) {
+            log.error("随机字符串有Redis中已存在，nonce={}", nonce);
+            throw new BusinessException(ExceptionEnum.REPLAY_PROTECT_REPEAT_ERROR);
+        }
+        TreeMap<String, String> sortedMap = new TreeMap<>();
+        requestParams.entrySet().stream().filter(entry -> Objects.nonNull(entry.getValue()) && Objects.nonNull(entry.getKey())).forEach(entry ->
+                                                                                                                                        sortedMap.put(entry.getKey(), String.valueOf(entry.getValue())));
+
+
+        // 将头信息也放进去
+        sortedMap.put("timestamp", timestamp);
+        sortedMap.put("nonce", nonce);
+        sortedMap.put("sign", sign);
+
+        String hashsign = generatesign(sortedMap);
+        if (!StringUtils.equals(sign, hashsign)) {
+            log.error("签名验证不通过 sign={},hashsign={}", sign, hashsign);
+            throw new BusinessException(ExceptionEnum.REPLAY_PROTECT_SIGN_VERIFY_ERROR);
+        }
+        redissonutils.set(key, "1", RedisKey.REPLAY_PROTECT_NONCE.getTtl());
+
+    }
+
+}
 ```
 
 在上面的实现中`validateSign()`方法的`timestamp`、`nonce`和`sign`字段都是从http请求头中获取的，签名的验证就为了校验请求参数是否被人篡改，所以除了请求头的信息，我们还需要报文体的内容。在Spring Web中读取请求的body并不是一件容易的事，因为`HttpServletRequest`的字节流只能被读取一次，如果我们在防重放这里读取了`HttpServletRequest`的内容，那么在后续的业务逻辑的`Controller`就会出现问题。Spring也提供了一个类`ContentCachingRequestWrapper`允许我们重复的读取`HttpServletRequest`中的内容，但是我这边试验过，这个类兼容性不是很好，所以针对预先读取`HttpServletRequest`中的内容，这里**建议通过切面进行获取**。
 
 # RabbitMQ中消息消费的幂等性控制
 
-为了防止同一条消息被多次消费，我们需要在消费端为消息消费添加幂等性控制的逻辑。首先我们来思考下，什么情况下消息会出现多次被消费的情况？
+## 1. 消息消费需要幂等性控制的原因
 
-# 防重放、幂等性和防重复点击的先后次序
+为了防止同一条消息被多次消费，我们需要在消费端为消息消费添加幂等性控制的逻辑。首先我们来思考下，什么情况下消息会出现多次被消费的情况？这里我列举几种比较常见的情况：
+
+1. **网络问题导致的消息重传**
+
+    当消费者从消息队列获取消息后，在向消息队列发送确认（ACK）消息的过程中，如果网络出现抖动或短暂中断，消息队列可能无法收到 ACK。例如，在基于 AMQP（高级消息队列协议）的 RabbitMQ 系统中，消费者在执行完业务逻辑后向 RabbitMQ 发送 ACK，但由于网络波动，ACK 丢失。消息队列会认为该消息未被消费，从而在超期后重新将消息发送给消费者。
+
+2. **消费者业务逻辑处理失败触发重试**
+
+    当消费者在处理消息时，如果业务逻辑出现错误（如数据库插入操作失败、调用外部服务超时等），消息队列通常会有重试机制。以 RabbitMQ 为例，如果消费者在消费消息时抛出异常，RabbitMQ 会根据配置的重试策略（如重试次数、重试间隔等）将消息重新发送给消费者。如果在重试过程中，没有对消息的重复性进行有效判断，就可能导致同一条消息被多次处理。
+
+3. **消息生产端的重复发送**
+
+    消息生产端在发送消息时，为了确保消息发送成功，往往会有重试机制。以RabbitMQ为例，为了保证消息在生产端的可靠性传递，我们会采用confirm机制+重发批量的逻辑去保证消息的可靠性投递，如果超过一定的时间没有收到Broker的确认，批量就会对超时未确认的消息进行重发，但是如果因为网络问题导致生产者没有收到Broker的确认消息，就会导致生产者再次重发该消息，从而导致消息被消费端多次消费。
+
+## 2. 在消费端如何保证消息消费的幂等性
+
+保证消息消费的幂等性顾名思义就是要保证消息有且只能被消费一次，如何保证消息只能被消费一次呢？大体的思路就是为每条消息添加唯一标识符（如UUID），在消费时检查该标识符是否已经处理过。这里消息的id生成我们采用雪花算法，存储我们使用Redis，通过Redis去重的功能来实现幂等性的控制。具体的代码实现如下：
+
+```Java
+
+```
+
+# 防重复点击
+
+在上面幂等性一节的描述中，我们提到了在Web开发中常见的幂等性问题，其中主要是用户重复点击前端菜单按钮导致的。防重复点击是幂等性控制的一部分，是我们具体开发中的实现落地，这里大家不要混淆，之所以拿出来单独来说是因为在日常Web开发中这块逻辑是比较常用的。
+
+因为这块逻辑和前端是强绑定的，只需要那些为前端点击提供服务的接口去做适配。首先我们来看下具体的实现思路：
+
+1. 声明幂等性控制的注解
+
+    可以看到这个注解一共有五个属性，其中常用的属性是前三个`prefix`、`key`和`duration`，剩余的两个属性，保持默认就行。
+
+    **值得一提的是这里的duration字段**，这里我默认设置了45s，原因是前端请求后端接口的超时时间是40s，假如这里我将允许重复点击的时间设置为20s，一个接口请求后端超过了20s还没有拿到后端的响应，在21s的时候又可以点击并请求后端接口，很有可能之前一个请求还没有处理完。所以这里将重复点击的时间间隔设置为了45s，也就是说**要大于前端请求的超时时间**。
+
+    ```Java
+    
+    ```
+
+2. 幂等性切面的具体逻辑
+
+    在下面的代码中可以看到，我们使用了Spring提供的SPEL表达式，使用SPEL表达式就可以让我们方便接解析出接口参数中的内容，从而方便我们可以针对每一条业务数据进行去重。具体的去重逻辑如下。这个切面的大体实现思路是：第一通过解析接口参数从而获得Redis存储的key值；第二使用Redis的setnx命令保存去重信息，如果保存成功则继续业务逻辑，如果保存失败则报错。具体的代码逻辑如下：
+
+    ```Java
+    
+    ```
+
+# 防重放、幂等性和防重复点击的区别
+
+防重放主要是指在网络通信中，防止攻击者截获并重新发送有效的消息或请求，以达到欺骗系统的目的。**是从系统网络安全范畴来做的防护手段。**
+
+幂等性则是为了保证一个接口能够被重复调用多次而不会有业务逻辑的副作用，是从系统功能角度出发，**关注功和业务的正确性和可靠性。**
+
+防重复点击则是指在用户界面中防止用户在短时间内多次点击同一个按钮或链接，从而导致重复的请求或操作。**主要关注用户体验，防止用户因误操作导致的重复请求。**
+
+从上面来看三个概念的关注点和范围都各不相同，三者也并不矛盾，三者在系统设计中可以相辅相成，确保系统的安全性、可靠性和用户体验。
 
 # 参考文章
 
@@ -200,3 +330,8 @@ update my_table set price=price+50, version=version+1 where id=1 and version=2
 - [一口气说出四种幂等性解决方案，面试官露出了姨母笑~](https://juejin.cn/post/6906290538761158670?searchId=2024100816365224874698A0E01F636BF2)
 - [如何保证 RabbitMQ 的消息可靠性](https://juejin.cn/post/7228864364744507450?searchId=2024100816365224874698A0E01F636BF2)
 - [RabbitMQ 可靠性、重复消费、顺序性、消息积压解决方案](https://juejin.cn/post/6977981645475282958?searchId=2024100816365224874698A0E01F636BF2)
+- [分布式系统中接口的幂等性](https://testerhome.com/articles/29399)
+- [基于timestamp和nonce的防止重放攻击方案](https://blog.csdn.net/koastal/article/details/53456696)
+- [开放API网关实践(二) —— 重放攻击及防御](https://juejin.cn/post/6844903910516195341?searchId=2024101811440668EB97F9736DA8E34C8C)
+- [API接口防止参数篡改和重放攻击](https://juejin.cn/post/6890798533473992717?searchId=202410251153373BBEE9832B42586DA034)
+- [API接口签名(防重放攻击)](https://juejin.cn/post/6983864029550739463)
