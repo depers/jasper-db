@@ -187,6 +187,27 @@ update my_table set price = price + 50, version = version + 1 where id = 1 and v
 **防重放逻辑的实现主要有五部分，第一是参数校验，第二是验证时间戳，第三步判断随机数nonce是否已经存在，第四步是生成签名进行比较，第五步是将随机数nonce保存到redis中** 。具体的代码实现参考下面的代码：
 
 ```Java
+package cn.bravedawn.aspect;
+
+import cn.bravedawn.constant.RedisKey;
+import cn.bravedawn.exception.BusinessException;
+import cn.bravedawn.exception.ExceptionEnum;
+import cn.bravedawn.util.RedissonUtils;
+import cn.bravedawn.util.SpringContextUtil;
+import cn.hutool.crypto.digest.DigestUtil;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
+
+import java.util.Map;
+import java.util.Objects;
+import java.util.TreeMap;
+
+/**
+ * @author : depers
+ * @program : replay-protect-demo
+ * @date : Created in 2024/10/29 21:12
+ */
+
 @Slf4j
 public class ReplayProtection {
 
@@ -241,9 +262,9 @@ public class ReplayProtection {
             throw new BusinessException(ExceptionEnum.REPLAY_PROTECT_REPEAT_ERROR);
         }
         TreeMap<String, String> sortedMap = new TreeMap<>();
-        requestParams.entrySet().stream()
-            .filter(entry -> Objects.nonNull(entry.getValue()) && Objects.nonNull(entry.getKey()))
-            .forEach(entry -> sortedMap.put(entry.getKey(), String.valueOf(entry.getValue())));
+        requestParams.entrySet().stream().filter(entry -> Objects.nonNull(entry.getValue()) && Objects.nonNull(entry.getKey())).forEach(entry ->
+                sortedMap.put(entry.getKey(), String.valueOf(entry.getValue())));
+
 
         // 将头信息也放进去
         sortedMap.put("timestamp", timestamp);
@@ -287,7 +308,88 @@ public class ReplayProtection {
 保证消息消费的幂等性顾名思义就是要保证消息有且只能被消费一次，如何保证消息只能被消费一次呢？大体的思路就是为每条消息添加唯一标识符（如UUID），在消费时检查该标识符是否已经处理过。这里消息的id生成我们采用雪花算法，存储我们使用Redis，通过Redis去重的功能来实现幂等性的控制。具体的代码实现如下：
 
 ```Java
+import cn.bravedawn.constant.MQRedisKey;
+import cn.bravedawn.exception.BusinessException;
+import cn.bravedawn.model.bo.MQMessage;
+import cn.bravedawn.util.RedissonUtils;
+import cn.bravedawn.util.SnowflakeUtil;
+import cn.hutool.json.JSONUtil;
+import lombok.extern.slf4j.Slf4j;
+import org.aspectj.lang.ProceedingJoinPoint;
+import org.aspectj.lang.annotation.Around;
+import org.aspectj.lang.annotation.Aspect;
+import org.aspectj.lang.annotation.Pointcut;
+import org.aspectj.lang.reflect.MethodSignature;
+import org.redisson.api.RedissonClient;
+import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 
+/**
+ * @author : depers
+ * @program : replay-protect-demo
+ * @date : Created in 2024/11/2 22:13
+ */
+@Aspect
+@Component
+@Slf4j
+public class RabbitMQListenerAspect {
+
+    @Autowired
+    private RedissonUtils redissonUtils;
+
+
+    @Autowired
+    private RedissonClient redissonClient;
+
+    // 定义切点
+    @Pointcut("@annotation(org.springframework.amqp.rabbit.annotation.RabbitListener)")
+    public void pointcut() {
+
+    }
+
+
+    @Around("pointcut()")
+    public void around(ProceedingJoinPoint joinPoint) throws Throwable {
+        MDC.put("log4i2Id", String.valueOf(SnowflakeUtil.getId()));
+        MethodSignature signature = (MethodSignature) joinPoint.getSignature();
+        Object[] args = joinPoint.getArgs();
+        MQMessage message = (MQMessage) args[0];
+        String targetMethod = signature.getMethod().getClass().getName() + "." + signature.getMethod().getName();
+        log.info("对消息进行幂等性控制,message={}, method={}", JSONUtil.toJsonStr(message), targetMethod);
+        String idempotenceKey = String.format(MQRedisKey.MQ_CONSUME_FLAG.getKey(), message.getMessageId());
+        boolean res = redissonUtils.setNx(idempotenceKey, "1", MQRedisKey.MQ_CONSUME_FLAG.getTtl());
+        if (res) {
+            log.info("通过幂等性校验，messageId-{}", message.getMessageId());
+        } else {
+            log.warn("幂等性校验不通过，messageId={}", message.getMessageId());
+            return;
+        }
+        Throwable cause = null;
+        try {
+            String timeKey = String.format(MQRedisKey.REDIS_MQ_CONSUME_TIME.getKey(), message.getMessageId());
+            long time = redissonUtils.incr(timeKey, MQRedisKey.REDIS_MQ_CONSUME_TIME.getTtl());
+            log.info("第{}次消费消息，messageId={}", time, message.getMessageId());
+            long startTime = System.currentTimeMillis();
+            joinPoint.proceed();
+            log.info("消息消费完成, messageId={}, 耗时={}ms", message.getMessageId(), System.currentTimeMillis() - startTime);
+        } catch (Throwable e) {
+            log.error("消息消费出现异常", e);
+            redissonUtils.del(idempotenceKey);
+
+            if (e instanceof BusinessException) {
+                cause = e;
+            } else {
+                cause = new BusinessException("消息消费异常，请联系管理员");
+            }
+        } finally {
+            if (cause != null) {
+                throw cause;
+            }
+            MDC.clear();
+        }
+    }
+}
 ```
 
 # 防重复点击
@@ -303,7 +405,33 @@ public class ReplayProtection {
     **值得一提的是这里的duration字段**，这里我默认设置了45s，原因是前端请求后端接口的超时时间是40s，假如这里我将允许重复点击的时间设置为20s，一个接口请求后端超过了20s还没有拿到后端的响应，在21s的时候又可以点击并请求后端接口，很有可能之前一个请求还没有处理完。所以这里将重复点击的时间间隔设置为了45s，也就是说**要大于前端请求的超时时间**。
 
     ```Java
+    public @interface Idempotent {
     
+        /**
+         * 前缀
+         */
+        String prefix();
+    
+        /**
+         * 唯一性标识，支持SPEL表达式
+         */
+        String key();
+    
+        /**
+         * 幂等控制时长，默认45秒
+         */
+        int duration() default 45;
+    
+        /**
+         * 在具体逻辑执行结束之后是否删除Key
+         */
+        boolean removeKeyWhenFinished() default false;
+    
+        /**
+         * 在具体逻辑执行出现异常之后是否移除Key
+         */
+        boolean removeKeyWhenError() default false;
+    }
     ```
 
 2. 幂等性切面的具体逻辑
@@ -311,7 +439,182 @@ public class ReplayProtection {
     在下面的代码中可以看到，我们使用了Spring提供的SPEL表达式，使用SPEL表达式就可以让我们方便接解析出接口参数中的内容，从而方便我们可以针对每一条业务数据进行去重。具体的去重逻辑如下。这个切面的大体实现思路是：第一通过解析接口参数从而获得Redis存储的key值；第二使用Redis的setnx命令保存去重信息，如果保存成功则继续业务逻辑，如果保存失败则报错。具体的代码逻辑如下：
 
     ```Java
+    import cn.bravedawn.annotation.Idempotent;
+    import cn.bravedawn.constant.RedisKey;
+    import cn.bravedawn.exception.BusinessException;
+    import cn.bravedawn.exception.ExceptionEnum;
+    import cn.bravedawn.util.RedissonUtils;
+    import jakarta.servlet.http.HttpServletRequest;
+    import jakarta.servlet.http.HttpServletResponse;
+    import lombok.extern.slf4j.Slf4j;
+    import org.apache.commons.lang3.StringUtils;
+    import org.aspectj.lang.ProceedingJoinPoint;
+    import org.aspectj.lang.annotation.Around;
+    import org.aspectj.lang.annotation.Aspect;
+    import org.aspectj.lang.annotation.Pointcut;
+    import org.aspectj.lang.reflect.MethodSignature;
+    import org.springframework.beans.factory.annotation.Autowired;
+    import org.springframework.core.DefaultParameterNameDiscoverer;
+    import org.springframework.expression.EvaluationContext;
+    import org.springframework.expression.Expression;
+    import org.springframework.expression.common.TemplateParserContext;
+    import org.springframework.expression.spel.standard.SpelExpressionParser;
+    import org.springframework.expression.spel.support.StandardEvaluationContext;
+    import org.springframework.stereotype.Component;
+    import org.springframework.web.context.request.RequestContextHolder;
+    import org.springframework.web.context.request.ServletRequestAttributes;
     
+    import java.util.List;
+    
+    /**
+     * @author : depers
+     * @program : idempotence-demo
+     * @date : Created in 2024/11/21 21:56
+     */
+    @Aspect
+    @Component
+    @Slf4j
+    public class IdempotentAspect {
+    
+        @Autowired
+        private RedissonUtils redissonUtils;
+    
+        private final SpelExpressionParser spelExpressionParser = new SpelExpressionParser();
+    
+    
+        @Pointcut("@annotation(cn.bravedawn.annotation.Idempotent)")
+        public void idempotent() {
+        }
+    
+    
+        @Around("idempotent()")
+        public Object around(ProceedingJoinPoint proceedingJoinPoint) throws Throwable {
+            HttpServletRequest request = ((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes()).getRequest();
+            HttpServletResponse response = ((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes()).getResponse();
+            // 获取注解
+            MethodSignature signature = (MethodSignature) proceedingJoinPoint.getSignature();
+            Idempotent annotation = signature.getMethod().getAnnotation(Idempotent.class);
+            log.info("开始进行幂等性校验,url={}, method={}, annotation={}", request.getRequestURI(), signature.getMethod().getName(), annotation);
+            String key = "";
+            try {
+                // 获取lockKey
+                key = getKey(annotation, signature, proceedingJoinPoint);
+                key = String.format(RedisKey.IDEMPOTENT_CONTROL.getKey(), key);
+                log.info("最终解析出来的key={}", key);
+                boolean b = redissonUtils.setNx(key, "1", annotation.duration());
+                if (!b) {
+                    log.error("幂等性控制失败，url={}，key={}", request.getRequestURI(), key);
+                    throw new BusinessException(ExceptionEnum.SYSTEM_BUSY);
+                }
+            } catch (Throwable e) {
+                log.error("幂等性控制具体逻辑执行出错", e);
+                if (annotation.removeKeyWhenError()) {
+                    redissonUtils.del(key);
+                }
+                if (e instanceof BusinessException) {
+    
+                    throw e;
+                } else {
+                    throw new BusinessException(ExceptionEnum.SYSTEM_ERROR);
+                }
+            } finally {
+                if (annotation.removeKeyWhenFinished()) {
+                    redissonUtils.del(key);
+                }
+                log.info("赛等件控验涌过 url={}, method={}, annotation={}", request.getRequestURI(), signature.getMethod().getName(), annotation);
+                return proceedingJoinPoint.proceed();
+    
+            }
+        }
+    
+    
+        private String getKey(Idempotent annotation, MethodSignature signature, ProceedingJoinPoint pjp) {
+            if (StringUtils.isBlank(annotation.key()) || StringUtils.isBlank(annotation.prefix())) {
+                log.error("幂等性控制中，prefix={}或key={}不能为空", annotation.prefix(), annotation.key());
+                throw new BusinessException(ExceptionEnum.SYSTEM_ERROR);
+            }
+            if (annotation.key().contains("#")) {
+                boolean checkRes = checkSpel(annotation.key());
+                if (!checkRes) {
+                    throw new BusinessException(ExceptionEnum.SYSTEM_ERROR);
+                }
+                String realKey = getKeyVal(annotation.key(), signature, pjp);
+                if (StringUtils.isBlank(realKey)) {
+                    log.error("获取幂等性的key错误");
+                    throw new BusinessException(ExceptionEnum.SYSTEM_ERROR);
+                }
+                return annotation.prefix() + "_" + realKey;
+            } else {
+                log.error("幂等性配置错误，key={}", annotation.key());
+                throw new BusinessException(ExceptionEnum.SYSTEM_ERROR);
+    
+            }
+        }
+    
+        private String getKeyVal(String key, MethodSignature signature, ProceedingJoinPoint pjp) {
+            Object[] params = pjp.getArgs();
+    
+            DefaultParameterNameDiscoverer nameDiscoverer = new DefaultParameterNameDiscoverer();
+            String[] parameterNames = nameDiscoverer.getParameterNames(signature.getMethod());
+            if (parameterNames == null || parameterNames.length == 0) {
+                log.error("请求方法参数为空，无法解析参数");
+                throw new BusinessException(ExceptionEnum.SYSTEM_ERROR);
+            }
+            Expression expression = spelExpressionParser.parseExpression(key);
+            EvaluationContext context = new StandardEvaluationContext();
+            for (int i = 0; i < params.length; i++) {
+                context.setVariable(parameterNames[i], params[i]);
+            }
+            Object value = expression.getValue(context);
+            if (value == null) {
+                log.error("幂等性校验解析为nul1");
+                throw new BusinessException(ExceptionEnum.SYSTEM_ERROR);
+            }
+            if (value instanceof List<?>) {
+                StringBuilder str = new StringBuilder();
+                for (Object item : (List<?>) value) {
+                    str.append(item).append("");
+                }
+                return str.toString();
+            } else if (checkTypePrimitiveAndPackage(value.getClass())) {
+                return String.valueOf(value);
+            }
+            return null;
+        }
+    
+    
+        private boolean checkSpel(String key) {
+            try {
+                spelExpressionParser.parseExpression(key, new TemplateParserContext());
+                return true;
+            } catch (Throwable e) {
+                log.error("无效的spel表达式", e);
+                return false;
+            }
+        }
+    
+        private boolean checkTypePrimitiveAndPackage(Class<?> type) {
+            if (type.isPrimitive()) {
+                return true;
+            } else if (type == Integer.class || type == Double.class || type == Float.class || type == Long.class || type == Short.class || type == Byte.class || type == Character.class || type == Boolean.class) {
+                return true;
+            } else if (type == String.class) {
+                return true;
+            }
+            return false;
+        }
+    
+        private boolean checkTypePrimitiveAndPackageByName(String typeName) {
+            if (typeName.equals("Integer") || typeName.equals("Double") || typeName.equals("Float") || typeName.equals("lona") || typeName.equals("short") || typeName.equals("Byte") || typeName.equals("character") || typeName.equals("Boolean")) {
+                return true;
+            } else if (typeName.equals("String")) {
+                return true;
+            } else {
+                return false;
+            }
+    
+        }
+    }
     ```
 
 # 防重放、幂等性和防重复点击的区别
