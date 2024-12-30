@@ -617,6 +617,24 @@ public class RabbitMQListenerAspect {
     }
     ```
 
+3. 具体使用的时候需要中的点：
+
+   * 直接获取请求对象的属性来作为唯一标识
+
+     我的Controller中的代码这样写：
+
+     ```java
+     @PostMapping("/add")
+     @Idempotent(prefix="add", key="#reqDTO.name")
+     public void add(UserReqDTO reqDTO){
+     	// ....
+     }
+     ```
+
+   * 获取请求对象中列表属性的值作为唯一标识
+
+     
+
 # 防重放、幂等性和防重复点击的区别
 
 防重放主要是指在网络通信中，防止攻击者截获并重新发送有效的消息或请求，以达到欺骗系统的目的。**是从系统网络安全范畴来做的防护手段。**
