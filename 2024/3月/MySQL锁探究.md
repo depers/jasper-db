@@ -19,13 +19,20 @@
 * 也叫**Record Lock**。
 * 仅仅是将一条记录锁上，所以记录锁是**查询条件是添加了唯一非空索引或是主键索引的列**。
 
-### 共享锁
+### 具体实践
 
-* 加锁命令：`SELECT ... LOCK IN SHARE MODE;`
+1. 创建表`user`
 
-### 排他锁
+    ```sql
+    CREATE TABLE `user` (
+      `id` int NOT NULL AUTO_INCREMENT COMMENT '主键',
+      `name` varchar(20) NOT NULL DEFAULT '' COMMENT '姓名',
+      PRIMARY KEY (`id`),
+      UNIQUE KEY `uni_name` (`name`)
+    ) ENGINE=InnoDB COMMENT='用户表';
+    ```
 
-* 加锁命令：`SELECT ... FOR UPDATE;`
+    `user`表有两个字段，一个是id，添加了主键索引。一个是name，添加了非空唯一索引。值得注意的是如果一个列添加了唯一索引，但是这个列可以为null，这种情况下这个列首先可以插入多个null值，其次针对这个列的是不会添加记录锁的。
 
 ## 间隙锁
 
@@ -51,6 +58,6 @@
 # 参考文章
 
 * 刘遵庆、凡新雷、邹勇 《MySQL DBA精英实战课》
-* [记录锁、间隙锁与 Next-Key Lock](https://mp.weixin.qq.com/s/Zh7GSzXJg_zt2ug3X5TwEQ)
+* [记录锁、间隙锁  Next-Key Lock](https://mp.weixin.qq.com/s/Zh7GSzXJg_zt2ug3X5TwEQ)
 * [什么是MySQL插入意向锁？](https://juejin.cn/post/7178321966024097829)
 * [详解 MySql InnoDB 中的三种行锁（记录锁、间隙锁与临键锁）](https://juejin.cn/post/6844903666420285454#heading-7)
