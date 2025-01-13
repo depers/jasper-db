@@ -16,10 +16,11 @@
 
 ## 记录锁
 
-* 也叫**Record Lock**。
-* 仅仅是将一条记录锁上，所以记录锁是**查询条件是添加了唯一非空索引或是主键索引的列**。
+* 别名：也叫**Record Lock**，是**排他锁**。
+* 加锁场景：仅仅是将一条记录锁上，所以记录锁是**查询条件是添加了唯一非空索引或是主键索引的列**，同时**查询语句必须为精准匹配**（`=`）。
+* 作用：
 
-### 具体实践
+### 具体实践——查询情况下
 
 1. 创建表`user`
 
@@ -30,9 +31,112 @@
       PRIMARY KEY (`id`),
       UNIQUE KEY `uni_name` (`name`)
     ) ENGINE=InnoDB COMMENT='用户表';
+    
+    -- 预埋两行数据
+    insert `user` (`name`)values('a'),('b');
     ```
 
-    `user`表有两个字段，一个是id，添加了主键索引。一个是name，添加了非空唯一索引。值得注意的是如果一个列添加了唯一索引，但是这个列可以为null，这种情况下这个列首先可以插入多个null值，其次针对这个列的是不会添加记录锁的。
+    `user`表有两个字段，一个是`id`，添加了**主键索引**。一个是`name`，添加了**非空唯一索引**。值得注意的是如果一个列添加了唯一索引，但是这个列可以为null，这种情况下这个列首先可以插入多个null值，其次针对这个列的是不会添加记录锁的。
+
+2. 为了方便观察，我们将`innodb_status_output_locks`参数设置为`ON`，这个参数用于控制是否在 `SHOW ENGINE INNODB STATUS` 命令的输出中包含详细的锁定信息。
+
+    首先我们来看下`innodb_status_output_locks`参数的设置情况，如果为`NO`那就是合适的：
+
+    ```sql
+    show variables like 'innodb_status_output_locks';
+    ```
+
+    如果不是，使用下面的语句开启该设置：
+
+    ```sql
+    set global innodb_status_output_locks = ON;
+    ```
+
+3. 执行下面的sql，观察记录锁的情况：
+
+    ```sql
+    -- 开启一个事务
+    begin;
+    
+    -- name为非空唯一索引列
+    select * from `user` where name = 'a' for update;
+    -- 查看锁的情况
+    show engine innodb status;
+    ```
+
+4. 这里我把`show engine innodb status;`的执行情况贴出来：
+
+    ```sql
+    ------------
+    TRANSACTIONS
+    ------------
+    ---TRANSACTION 358709, ACTIVE 6 sec
+    3 lock struct(s), heap size 1128, 2 row lock(s)
+    MySQL thread id 13, OS thread handle 6158036992, query id 145 localhost 127.0.0.1 root starting
+    /* ApplicationName=DBeaver 22.3.3 - SQLEditor <Script-2.sql> */ show engine innodb status
+    TABLE LOCK table `mysql-lock`.`user` trx id 358709 lock mode IX
+    RECORD LOCKS space id 566 page no 5 n bits 72 index uni_name of table `mysql-lock`.`user` trx id 358709 lock_mode X locks rec but not gap
+    Record lock, heap no 2 PHYSICAL RECORD: n_fields 2; compact format; info bits 0
+     0: len 1; hex 61; asc a;;
+     1: len 4; hex 80000001; asc     ;;
+    
+    RECORD LOCKS space id 566 page no 4 n bits 72 index PRIMARY of table `mysql-lock`.`user` trx id 358709 lock_mode X locks rec but not gap
+    Record lock, heap no 2 PHYSICAL RECORD: n_fields 4; compact format; info bits 0
+     0: len 4; hex 80000001; asc     ;;
+     1: len 6; hex 000000057930; asc     y0;;
+     2: len 7; hex 810000008b0110; asc        ;;
+     3: len 1; hex 61; asc a;;
+    ```
+
+    上面的事务id为358709，因为我们开启了手动事务，所以这个事务id可以通过`select * from information_schema.innodb_trx;`这句sql查询到。
+
+5. 在上面我们可以清晰的看到一条表锁，两条记录锁的记录。下面我们一条一条来分析。
+
+    * 表锁-意向排他锁
+
+        ```sql
+        TABLE LOCK table `mysql-lock`.`user` trx id 358709 lock mode IX
+        ```
+
+        * **table mysql-lock.user**：表示该锁所在的表是 `mysql-lock` 数据库中的 `user` 表。
+
+        - **trx id 358709**：表示持有该锁的事务ID为358709。
+        - **lock mode IX**：表示锁的模式为意向排他锁（Intention Exclusive Lock，简称IX锁）。
+
+    * 记录锁（非空唯一索引）
+
+        ```sql
+        RECORD LOCKS space id 566 page no 5 n bits 72 index uni_name of table `mysql-lock`.`user` trx id 358709 lock_mode X locks rec but not gap
+        ```
+
+        - **index uni_name**：表示该锁是针对表 `mysql-lock`.`user` 中名为 `uni_name` 的索引。`uni_name` 是一个唯一索引（UNIQUE INDEX）。
+        - **of table mysql-lock.user**：表示该锁所在的表是 `mysql-lock` 数据库中的 `user` 表。
+        - **trx id 358709**：表示持有该锁的事务ID为358709。
+        - **lock_mode X**：表示锁的模式为排他锁（X锁）。排他锁用于写操作，确保在事务释放锁之前，其他事务不能读取或写入该记录。
+        - **locks rec but not gap**：表示该锁是记录锁，而不是间隙锁。记录锁锁定的是具体的记录，而间隙锁锁定的是记录之间的间隙，用于防止其他事务在该间隙中插入新记录。
+
+    * 记录锁（主键索引）
+
+        ```sql
+        RECORD LOCKS space id 566 page no 4 n bits 72 index PRIMARY of table `mysql-lock`.`user` trx id 358709 lock_mode X locks rec but not gap
+        ```
+
+        - **index PRIMARY**：表示该锁是针对表 `mysql-lock`.`user` 中的主键索引（PRIMARY KEY）。
+        - **of table mysql-lock.user**：表示该锁所在的表是 `mysql-lock` 数据库中的 `user` 表。
+        - **trx id 358709**：表示持有该锁的事务ID为358709。
+        - **lock_mode X**：表示锁的模式为排他锁（X锁）。排他锁用于写操作，确保在事务释放锁之前，其他事务不能读取或写入该记录。
+        - **locks rec but not gap**：表示该锁是记录锁，而不是间隙锁。记录锁锁定的是具体的记录，而间隙锁锁定的是记录之间的间隙，用于防止其他事务在该间隙中插入新记录。
+
+## 加了记录锁的效果
+
+* 阻塞的情况
+    * `select * from user where name = 'a' LOCK IN SHARE MODE;`
+    * `UPDATE user SET name = 'Alice Smith' WHERE id = 1;`
+* 不阻塞的情况
+    * `select * from user where name = 'a';`
+    * `INSERT INTO user (id, name) VALUES (3, 'David');`
+
+
 
 ## 间隙锁
 
