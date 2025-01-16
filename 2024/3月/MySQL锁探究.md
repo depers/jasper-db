@@ -16,11 +16,11 @@
 
 ## 记录锁
 
-* 别名：也叫**Record Lock**，是**排他锁**。
-* 加锁场景：仅仅是将一条记录锁上，所以记录锁是**查询条件是添加了唯一非空索引或是主键索引的列**，同时**查询语句必须为精准匹配**（`=`）。
-* 作用：
+* **别名**：也叫**Record Lock**，是**排他锁**。
+* **加锁场景**：仅仅是将一条记录锁上，所以记录锁是**查询条件是添加了唯一非空索引或是主键索引的列**，同时**查询语句必须为精准匹配**（`=`）。
+* **作用**：只会将当前一行数据锁定，对该锁的正常读操作没有影响，会阻塞其他事务对这条记录的写操作。
 
-### 具体实践——查询情况下
+### 通过加排他锁的获取记录锁                                                                                                                                                                             
 
 1. 创建表`user`
 
@@ -60,6 +60,7 @@
     
     -- name为非空唯一索引列
     select * from `user` where name = 'a' for update;
+    
     -- 查看锁的情况
     show engine innodb status;
     ```
@@ -127,7 +128,44 @@
         - **lock_mode X**：表示锁的模式为排他锁（X锁）。排他锁用于写操作，确保在事务释放锁之前，其他事务不能读取或写入该记录。
         - **locks rec but not gap**：表示该锁是记录锁，而不是间隙锁。记录锁锁定的是具体的记录，而间隙锁锁定的是记录之间的间隙，用于防止其他事务在该间隙中插入新记录。
 
-## 加了记录锁的效果
+6. **总结：在对非空唯一索引的列或是主键id进行精准查询，并使用排他锁的方式查询，会在那一条记录上面添加记录锁。**
+
+### 通过更新操作获取记录锁
+
+1. 执行如下sql：
+
+    ```sql
+    -- 开启一个事务
+    begin;
+    
+    -- id是主键
+    update `user` set name = 'aaa' where id = 1;
+    
+    -- 查看锁的情况
+    show engine innodb status;
+    ```
+
+2. 把`show engine innodb status;`的执行情况贴出来：
+
+    ```sql
+    ---TRANSACTION 358720, ACTIVE 3 sec
+    2 lock struct(s), heap size 1128, 1 row lock(s)
+    MySQL thread id 13, OS thread handle 6158036992, query id 273 localhost 127.0.0.1 root starting
+    /* ApplicationName=DBeaver 22.3.3 - SQLEditor <Script-2.sql> */ show engine innodb status
+    TABLE LOCK table `mysql-lock`.`user` trx id 358720 lock mode IX
+    RECORD LOCKS space id 566 page no 4 n bits 72 index PRIMARY of table `mysql-lock`.`user` trx id 358720 lock_mode X locks rec but not gap
+    Record lock, heap no 4 PHYSICAL RECORD: n_fields 4; compact format; info bits 0
+     0: len 4; hex 80000001; asc     ;;
+     1: len 6; hex 00000005793e; asc     y>;;
+     2: len 7; hex 0200000150161c; asc     P  ;;
+     3: len 3; hex 616161; asc aaa;;
+    ```
+
+    从上面的描述中我们可以看到`update`操作触发了记录锁的逻辑。
+
+3. **总结：在对非空唯一索引的列或是主键id进行精准更新，会在那一条记录上面添加记录锁。**
+
+### 加了记录锁的效果
 
 * 阻塞的情况
     * `select * from user where name = 'a' LOCK IN SHARE MODE;`
@@ -136,15 +174,85 @@
     * `select * from user where name = 'a';`
     * `INSERT INTO user (id, name) VALUES (3, 'David');`
 
-
-
 ## 间隙锁
 
 * 排他锁的一种，也叫**Gap Lock**。
 * **不允许其他事务往这条记录前面的间隙插入新记录，锁定一个范围但是不包含记录本身**。
 * 仅在可重复读（Repeatable Read）隔离级别下有效。
 * 作用是解决幻读问题。
-* 基于**非唯一索引**。
+* 基于**非唯一索引，也就是说主键索引也是可以**。
+
+### 实践
+
+1. 创建表结构
+
+    ```sql
+    CREATE TABLE `student` (
+      `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+      `name` varchar(20) NOT NULL DEFAULT '' COMMENT '姓名',
+      PRIMARY KEY (`id`)
+    ) ENGINE=InnoDB COMMENT='学生表';
+    
+    -- 预铺数据
+    insert into student(`id`, `name`) values (1, 'a'),(5, 'b');
+    ```
+
+2. 接着我们执行如下sql：
+
+    ```sql
+    -- 开启一个事务
+    begin;
+    
+    -- id是主键，进行范围查询，在id区间为（1,5）直接添加间隙锁
+    SELECT * FROM `student` WHERE id BETWEEN 1 AND 5 FOR UPDATE;
+    
+    -- 查看锁的情况
+    show engine innodb status;
+    ```
+
+3. 执行了上面的命令之后，我发现：
+
+    ```Java
+    ---TRANSACTION 358785, ACTIVE 97 sec
+    3 lock struct(s), heap size 1128, 3 row lock(s)
+    MySQL thread id 21, OS thread handle 6158036992, query id 564 localhost 127.0.0.1 root starting
+    /* ApplicationName=DBeaver 22.3.3 - SQLEditor <Script-2.sql> */ show engine innodb status
+    TABLE LOCK table `mysql-lock`.`student` trx id 358785 lock mode IX
+    RECORD LOCKS space id 567 page no 4 n bits 72 index PRIMARY of table `mysql-lock`.`student` trx id 358785 lock_mode X locks rec but not gap
+    Record lock, heap no 2 PHYSICAL RECORD: n_fields 4; compact format; info bits 0
+     0: len 8; hex 8000000000000001; asc         ;;
+     1: len 6; hex 000000057978; asc     yx;;
+     2: len 7; hex 810000009e0110; asc        ;;
+     3: len 1; hex 61; asc a;;
+    
+    RECORD LOCKS space id 567 page no 4 n bits 72 index PRIMARY of table `mysql-lock`.`student` trx id 358785 lock_mode X
+    Record lock, heap no 1 PHYSICAL RECORD: n_fields 1; compact format; info bits 0
+     0: len 8; hex 73757072656d756d; asc supremum;;
+    
+    Record lock, heap no 3 PHYSICAL RECORD: n_fields 4; compact format; info bits 0
+     0: len 8; hex 8000000000000005; asc         ;;
+     1: len 6; hex 000000057978; asc     yx;;
+     2: len 7; hex 810000009e0121; asc       !;;
+     3: len 1; hex 62; asc b;;
+    ```
+
+    从上面可以看出，上面分别为id为1和5的记录添加了两把记录锁。
+
+4. 接着我们继续执行下面的sql：
+
+    ```sql
+    -- 在id区间为（1,5）中插入记录
+    insert into `student` (`id`, `name`) value(3, 'e')
+    ```
+
+5. 接着执行`show engine innodb status;`查看锁的情况：
+
+    ```Java
+    RECORD LOCKS space id 567 page no 4 n bits 72 index PRIMARY of table `mysql-lock`.`student` trx id 358784 lock_mode X locks gap before rec insert intention waiting
+    ```
+
+    
+
 * 案例说明：
     * `SELECT * FROM user WHERE age BETWEEN 100 AND 200 FOR UPDATE;`：索引字段`age`在`(100，200)`范围内添加了间隙锁。
     * `SELECT * FROM user where age = 100;`：索引字段`age`在` (-∞,1)`范围内添加了间隙锁。
