@@ -115,11 +115,26 @@
 
 ### 原来的AUTO-INC锁
 
+* 加锁逻辑：
+    1. AUTO-INC 锁是特殊的表锁机制，锁不是再一个事务提交后才释放，而是**在执行完插入语句后就会立即释放**。
+    2. 在插入数据时，会加一个**表级别的 AUTO-INC 锁**，然后为被`AUTO_INCREMENT`修饰的字段赋值递增的值，等插入语句执行完成后，才会把AUTO-INC锁释放掉。
+    3. 一个事务在持有 AUTO-INC 锁的过程中，其他事务的**如果要再向该表插入语句都会被阻塞**，从而保证插入数据时，被 `AUTO_INCREMENT` 修饰的字段的值是连续递增的。
 
+* 缺点：AUTO-INC 锁在对大量数据进行插入的时候，会影响插入性能，因为另一个事务中的插入会被阻塞。
 
 ### 轻量级的AUTO-INC锁
 
+* 加锁逻辑：在插入数据的时候，**会为被 `AUTO_INCREMENT` 修饰的字段加上轻量级锁，然后给该字段赋值一个自增的值，就把这个轻量级锁释放了，而不需要等待整个插入语句执行完后才释放锁**。
 
+### 如何设置AUTO-INC锁
+
+InnoDB 存储引擎提供了个 innodb_autoinc_lock_mode 的系统变量，是用来控制选择用 AUTO-INC 锁，还是轻量级的锁。
+
+- 当 innodb_autoinc_lock_mode = 0，就采用原来的AUTO-INC锁，语句执行结束后才释放锁；
+- 当 innodb_autoinc_lock_mode = 2，就采用轻量级AUTO-INC锁，申请自增主键后就释放锁，并不需要等语句执行后才释放。
+- 当 innodb_autoinc_lock_mode = 1：
+    - 普通 insert 语句，自增锁在申请之后就马上释放；
+    - 类似 insert … select 这样的批量插入数据的语句，自增锁还是要等语句结束后才被释放；
 
 # 行级锁
 
@@ -477,3 +492,4 @@ select * from `student` where id = 5 LOCK in share mode;
 # 参考文章
 
 * [小林code-锁](https://xiaolincoding.com/mysql/lock/mysql_lock.html#%E5%85%A8%E5%B1%80%E9%94%81)
+* [AUTO_INCREMENT Handling in InnoDB](https://dev.mysql.com/doc/refman/8.0/en/innodb-auto-increment-handling.html)
