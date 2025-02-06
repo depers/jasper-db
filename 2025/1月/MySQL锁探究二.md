@@ -25,7 +25,7 @@ insert into `user` (id, name, age) values
 (20, '香克斯', 39);
 ```
 
-# 一、哪些SQL语句可以添加行级锁
+# 一、哪些SQL语句可以添加行级锁？
 
 InnoDB 引擎是支持行级锁的，而 MyISAM 引擎并不支持行级锁，所以后面的内容都是基于 InnoDB 引擎 的。
 
@@ -55,7 +55,23 @@ delete from table where id = 1;
 
 ![](../../assert/x锁和s锁.webp)
 
-# 二、行级锁的基本特性
+# 二、有什么命令可以分析加了什么锁？
+
+可以通过 `select * from performance_schema.data_locks;` 这条语句，查看事务执行 SQL 过程中加了什么锁。
+
+其中`LOCK_TYPE`表示是表级锁还是行级锁：
+
+* `TABLE`：表示表级锁。
+
+* `RECORD`：表示行级锁。
+
+通过 `LOCK_MODE`可以确认是 next-key 锁，还是间隙锁，还是记录锁：
+
+- 如果 LOCK_MODE 为 `X`，说明是 next-key 锁；
+- 如果 LOCK_MODE 为 `X, REC_NOT_GAP`，说明是记录锁；
+- 如果 LOCK_MODE 为 `X, GAP`，说明是间隙锁；
+
+# 三、行级锁的基本特性
 
 * **锁的对象是索引，加锁的基本单位是 next-key lock**，它是由记录锁和间隙锁组合而成的，**next-key lock 是前开后闭区间，而间隙锁是前开后开区间**。
 * **在能使用记录锁或者间隙锁就能避免幻读现象的场景下， next-key lock 就会退化成记录锁或间隙锁**。
