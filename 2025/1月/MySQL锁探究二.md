@@ -85,3 +85,4 @@ delete from table where id = 1;
 
 * [MySQL 是怎么加锁的？](https://xiaolincoding.com/mysql/lock/how_to_lock.html)
 * [第25章 工作面试老大难-锁](https://relph1119.github.io/mysql-learning-notes/#/mysql/25-%E5%B7%A5%E4%BD%9C%E9%9D%A2%E8%AF%95%E8%80%81%E5%A4%A7%E9%9A%BE-%E9%94%81)
+* [MySQL锁探究一](http://www.bravedawn.cn/details.html?aid=8499)
