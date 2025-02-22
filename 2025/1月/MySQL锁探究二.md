@@ -75,10 +75,13 @@ delete from table where id = 1;
 
 * **锁的对象是索引，加锁的基本单位是 next-key lock**，它是由记录锁和间隙锁组合而成的，**next-key lock 是前开后闭区间，而间隙锁是前开后开区间**。
 * **在能使用记录锁或者间隙锁就能避免幻读现象的场景下， next-key lock 就会退化成记录锁或间隙锁**。
-* 针对非唯一索引等值查询，如果对二级索引
+* 如果是**二级索引的唯一索引**，除了对二级索引的加锁规则之外，还会对查询到的记录的主键索引项加「**记录锁**」。
 
+# 四、MySQL是如何添加行级锁的
 
+![](../../assert/MySQL如何添加行级锁.png)
 
 # 参考文章
 
 * [MySQL 是怎么加锁的？](https://xiaolincoding.com/mysql/lock/how_to_lock.html)
+* [第25章 工作面试老大难-锁](https://relph1119.github.io/mysql-learning-notes/#/mysql/25-%E5%B7%A5%E4%BD%9C%E9%9D%A2%E8%AF%95%E8%80%81%E5%A4%A7%E9%9A%BE-%E9%94%81)
