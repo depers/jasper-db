@@ -39,14 +39,28 @@ delete from table where id = 1;
 其中`LOCK_TYPE`表示是表级锁还是行级锁：
 
 * `TABLE`：表示表级锁。
-
 * `RECORD`：表示行级锁。
+
+其中LOCk_MODE字段的含义：
+
+| lock_mode 值       | 锁类型                                | 说明                                         |
+| ------------------ | ------------------------------------- | -------------------------------------------- |
+| `S`                | 共享锁 (Shared Lock)                  | 允许多个事务同时读取同一资源                 |
+| `X`                | 排他锁 (Exclusive Lock)               | 只允许一个事务读写资源，其他事务不能加任何锁 |
+| `IS`               | 意向共享锁 (Intention Shared Lock)    | 表示事务打算在表的某些行上设置共享锁         |
+| `IX`               | 意向排他锁 (Intention Exclusive Lock) | 表示事务打算在表的某些行上设置排他锁         |
+| `GAP`              | 间隙锁 (Gap Lock)                     | 锁定索引记录之间的间隙                       |
+| `REC_NOT_GAP`      | 记录锁 (Record Lock)                  | 只锁定索引记录本身，不锁定间隙               |
+| `INSERT_INTENTION` | 插入意向锁 (Insert Intention Lock)    | 表示准备在间隙中插入新记录的意向             |
+| `AUTO_INC`         | 自增锁 (Auto-Increment Lock)          | 用于自增列插入操作的特殊表级锁               |
 
 通过 `LOCK_MODE`可以确认是 next-key 锁，还是间隙锁，还是记录锁：
 
-- 如果 LOCK_MODE 为 `X`，说明是 next-key 锁；
-- 如果 LOCK_MODE 为 `X, REC_NOT_GAP`，说明是记录锁；
-- 如果 LOCK_MODE 为 `X, GAP`，说明是间隙锁；
+- `X`，说明是 next-key 锁
+- `X, REC_NOT_GAP`，说明是记录锁
+- `X, GAP`，说明是间隙锁
+- `IS`：意向共享锁（表级）
+- `IX`：意向排他锁（表级）
 
 # 三、行级锁的基本特性
 
