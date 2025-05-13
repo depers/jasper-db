@@ -364,7 +364,7 @@ OBJECT_INSTANCE_BEGIN: 5285387800
 
 此时type字段的值是**range（索引范围扫描）**，range 表示采用了索引范围扫描，一般在 where 子句中使用 < 、>、in、between 等关键词，只检索给定范围的行，属于范围查找。从这一级别开始，**索引的作用会越来越明显，因此我们需要尽量让** **SQL** **查询可以使用到 range 这一级别及以上的 type 访问方式。**
 
-![img](https://mcnra9oc33tz.feishu.cn/space/api/box/stream/download/asynccode/?code=ZmFlOWM5YmY2ZjUxNmYxNzFhM2E4ZmJjNzYzY2EyZTNfbjhrUzQxT3NETnlFZndqNG9CSDAxMHNxaXh4Y0xsZWNfVG9rZW46VzhveWJva3Jmb3BSQUZ4Z3ZDeGNkQ3g5bjZTXzE3NDcxNDMwNDE6MTc0NzE0NjY0MV9WNA)
+![img](../../assert/在添加索引之后.png)
 
 # 结论
 
