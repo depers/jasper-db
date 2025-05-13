@@ -350,7 +350,7 @@ OBJECT_INSTANCE_BEGIN: 5285387800
 
 ## 在没有为`account`字段添加索引之前
 
-执行sql语句：`explain update `order` set status = 1 where aoccunt  = '1000';`
+执行sql语句：``explain update `order` set status = 1 where aoccunt  = '1000';``
 
 ![img](../../assert/explain执行计划.png)
 
@@ -358,9 +358,9 @@ OBJECT_INSTANCE_BEGIN: 5285387800
 
 ## 在为`account`字段添加索引后
 
-首先执行添加索引的操作，执行sql：
+首先执行添加索引的操作，执行sql：``alter table `order` add index `account_IDX` (`account`);``
 
-接着再执行sql：`explain update `order` set status = 1 where account = '1000';`
+接着再执行sql：``explain update `order` set status = 1 where account = '1000';``
 
 此时type字段的值是**range（索引范围扫描）**，range 表示采用了索引范围扫描，一般在 where 子句中使用 < 、>、in、between 等关键词，只检索给定范围的行，属于范围查找。从这一级别开始，**索引的作用会越来越明显，因此我们需要尽量让** **SQL** **查询可以使用到 range 这一级别及以上的 type 访问方式。**
 
