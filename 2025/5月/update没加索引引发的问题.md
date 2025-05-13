@@ -354,6 +354,26 @@ OBJECT_INSTANCE_BEGIN: 5285387800
 
 如果没有使用索引，就会给全表的加上 next-key 锁， 那么锁就会持续很长一段时间，直到事务结束，而这期间除了 `select ... from`语句，其他语句都会被锁住不能执行，业务会因此停滞。
 
+# 使用explain查看执行计划
+
+## 在没有为`account`字段添加索引之前
+
+执行sql语句：`explain update `order` set status = 1 where aoccunt  = '1000';`
+
+![img](../../assert/explain执行计划.png)
+
+这里我们主要来看type字段，type表示数据扫描类型，这里的值是**index（全索引扫描）**，这表示MySQL 正在**遍历整个索引树**来查找数据，也就是说**数据库会遍历主键id构建的聚簇索引树来匹配数据**。
+
+## 在为`account`字段添加索引后
+
+首先执行添加索引的操作，执行sql：
+
+接着再执行sql：`explain update `order` set status = 1 where account = '1000';`
+
+此时type字段的值是**range（索引范围扫描）**，range 表示采用了索引范围扫描，一般在 where 子句中使用 < 、>、in、between 等关键词，只检索给定范围的行，属于范围查找。从这一级别开始，**索引的作用会越来越明显，因此我们需要尽量让** **SQL** **查询可以使用到 range 这一级别及以上的 type 访问方式。**
+
+![img](https://mcnra9oc33tz.feishu.cn/space/api/box/stream/download/asynccode/?code=ZmFlOWM5YmY2ZjUxNmYxNzFhM2E4ZmJjNzYzY2EyZTNfbjhrUzQxT3NETnlFZndqNG9CSDAxMHNxaXh4Y0xsZWNfVG9rZW46VzhveWJva3Jmb3BSQUZ4Z3ZDeGNkQ3g5bjZTXzE3NDcxNDMwNDE6MTc0NzE0NjY0MV9WNA)
+
 # 结论
 
-当我们要执行 update 语句的时候，确保 where 条件中带上了索引列，，并且在测试机确认该语句是否走的是索引扫描，防止因为扫描全表，而对表中的所有记录加上锁。
+**当我们要执行 update 语句的时候，确保 where 条件中带上了索引列**，并且在测试机确认该语句是否走的是索引扫描，防止因为扫描全表，而对表中的所有记录加上锁。
