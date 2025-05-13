@@ -369,3 +369,9 @@ OBJECT_INSTANCE_BEGIN: 5285387800
 # 结论
 
 **当我们要执行 update 语句的时候，确保 where 条件中带上了索引列**，并且在测试机确认该语句是否走的是索引扫描，防止因为扫描全表，而对表中的所有记录加上锁。
+
+# 参考文章
+
+* [explain你看哪些字段？](https://xiaolincoding.com/backend_interview/internet_medium/fanruan.html#explain%E4%BD%A0%E7%9C%8B%E5%93%AA%E4%BA%9B%E5%AD%97%E6%AE%B5)
+* [update 没加索引会锁全表？](https://xiaolincoding.com/mysql/lock/update_index.html#%E4%B8%BA%E4%BB%80%E4%B9%88%E4%BC%9A%E5%8F%91%E7%94%9F%E8%BF%99%E7%A7%8D%E7%9A%84%E4%BA%8B%E6%95%85)
+* [MySQL执行计划分析](https://javaguide.cn/database/mysql/mysql-query-execution-plan.html)
