@@ -6,30 +6,43 @@
 
 ## Linux 中的 I/O 模型
 
-首先我们来梳理下 Linux 中的 IO 模：
+首先我们来梳理下 Linux 中的 IO 模型：
 
 1. Blocking I/O
+
    ![](../../assert/Mg1ybripBoS2jVxmQThcb9PWnnK.webp)
    阻塞 IO 就是当应用发起读取数据申请时，在内核数据没有准备好之前，应用进程会一直处于等待数据状态，直到内核把数据准备好了交给应用才结束。
    在这种 I/O 模型下，我们不得不为每一个 Socket 都分配一个线程，这会造成很大的资源浪费。
    Blocking I/O 优缺点都非常明显。优点是**简单易用**，对于本地 I/O 而言性能很高。缺点是处理网络 I/O 时，造成**进程阻塞空等，浪费资源**。
    注: `read() ` 和 `recvfrom()` 的区别是，前者从文件系统读取数据，后者从 socket 接收数据。
+
 2. No-Blocking I/O
+
    非阻塞 I/O 隔一段时间就发起 system call 看数据是否就绪(ready)。
+
    如果数据就绪，就从 kernel space 复制到 user space，操作数据; 如果还没就绪，kernel 会**立即**返回 `EWOULDBLOCK` 这个错误。
    ![](../../assert/DVX8bEZrFo5B2hxQRW2cfhRlngd.png)
    Non-blocking I/O 的优势在于，**进程发起 I/O 操作时，不会因为数据还没就绪而阻塞**，这就是”非阻塞”的含义。缺点是**对于 Socket 而言，大量的 system call 十分消耗 CPU**。
+
 3. I/O multiplexing (`select` 、`poll`、 `epoll`)
+
    I/O Multiplexing 又叫 IO 多路复用，这是借用了集成电路多路复用中的概念。它优化了非阻塞 I/O 大量发起 system call 的问题。
+
    上面介绍的 I/O 模型都是直接发起 I/O 操作，而 I/O Multiplexing 首先向 kernel 发起 system call，传入 file descriptor 和感兴趣的事件(readable、writable 等)，让 kernel 监测，当其中一个或多个 fd 数据就绪，就会返回结果。程序再发起真正的 I/O 操作 `recvfrom` 读取数据。
    ![](../../assert/MyGlbfRSnoHu5pxtytxcSurhnAg.webp)
    在 linux 中，有 3 种 system call 可以让内核监测 file descriptors，分别是 select、poll、epoll。关于这三种实现的细节，我们在后续的逻辑中再讨论。
+
 4. Signal Driven I/O (`SIGIO`)
+
    首先开启套接口信号驱动 IO 功能，并通过系统调用 `sigaction` 执行一个信号处理函数，此时请求即刻返回，当数据准备就绪时，就生成对应进程的 SIGIO 信号，通过信号回调通知应用线程调用 `recvfrom` 来读取数据。
+
    IO 复用模型里面的 select 虽然可以监控多个 fd 了，但 `select` 其实现的本质上还是通过不断的轮询 fd 来监控数据状态， 因为大部分轮询请求其实都是无效的，所以信号驱动 IO 意在通过这种建立信号关联的方式，实现了发出请求后只需要等待数据就绪的通知即可，这样就可以避免大量无效的数据状态轮询操作。
    ![](../../assert/CBpsbCcqfoRPeVxhrowcngd5n6e.webp)
+
 5. Asynchronous I/O (the POSIX `aio_` functions)
+
    通过观察我们发现，不管是 IO 复用还是信号驱动，我们要读取一个数据总是要发起两阶段的请求，第一次发送读取请求，询问数据状态是否准备好，第二次发送 `recvform` 请求读取数据。
+
    应用只需要向内核发送一个 `read` 请求，告诉内核它要读取数据后即刻返回；内核收到请求后会建立一个信号联系，当数据准备就绪，内核会主动把数据从内核复制到用户空间，等所有操作都完成之后，内核会发起一个通知告诉应用，我们称这种一劳永逸的模式为异步 IO 模型。
    ![](../../assert/TMfEbazVIothxOx3SsccEEEUnzd.webp)
 
