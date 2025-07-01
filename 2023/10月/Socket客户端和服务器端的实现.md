@@ -93,6 +93,42 @@ public class Handler extends Thread{
         }
 
     }
+
+    /**
+     * 如果项目中不使用换行符表示一段报文的终止符，还可以通过别的符号来判断，代码如下
+     */
+    private void handleV2(InputStream input, OutputStream output) throws IOException {
+        BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(output, StandardCharsets.UTF_8));
+        BufferedReader reader = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8));
+
+        System.out.println("开始读取客户端数据...");
+
+        int charRead;
+        StringBuilder messageBuilder = new StringBuilder();
+
+        // 使用read()逐个字符读取
+        while ((charRead = reader.read()) != -1) {
+            char c = (char) charRead;
+            messageBuilder.append(c);
+
+            // 如果检测到特定结束符(如换行) char(4)，可以处理消息
+            if (c == (char) 4 ) {
+                String received = messageBuilder.toString().trim();
+                if (!received.isEmpty()) {
+                    System.out.println("收到完整消息: " + received);
+
+                    // 回传响应
+                    writer.write("服务器已接收: " + received + "\n");
+                    writer.flush();
+
+                    messageBuilder.setLength(0); // 清空缓冲区
+                }
+            }
+        }
+
+        System.out.println("客户端断开连接");
+
+    }
 }
 ```
 
@@ -133,7 +169,7 @@ public class Client {
             System.out.print(">>> "); // 打印提示
             String s = scanner.nextLine(); // 读取一行输入
             writer.write(s);
-            writer.newLine();
+            writer.newLine(); // 服务端使用 readLine() 时依赖换行符(\n)来判断行结束
             writer.flush();
             String resp = reader.readLine();
             System.out.println("<<< " + resp);
