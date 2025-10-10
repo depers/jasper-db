@@ -16,13 +16,69 @@
 
     在这个场景中，我在HandlerA的`channelRead()`方法中抛出异常，但是并没有复写其`exceptionCaught()`方法，在后面的HandlerB和HandlerC中，我们也没有复写其`exceptionCaught()`方法。也就是说在所有入栈Handler中，我们都没有进行异常捕获。可以看到Netty默认情况下是有异常捕获逻辑的，会将异常堆栈记录到Warn日志中。
 
+    ```
+    [2025-10-10 16:51:51.821][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientInHandlerA.channelActive(23)]-A->客户端发送消息 
+    [2025-10-10 16:51:51.841][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientOutHandlerC.write(18)]-C->客户端写入数据开始 
+    [2025-10-10 16:51:51.842][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientOutHandlerB.write(18)]-B->客户端写入数据开始 
+    [2025-10-10 16:51:51.842][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientOutHandlerA.write(18)]-A->客户端写入数据开始 
+    [2025-10-10 16:51:51.842][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientOutHandlerA.write(23)]-A->客户端写入数据结束 
+    [2025-10-10 16:51:51.842][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientOutHandlerB.write(22)]-B->客户端写入数据结束 
+    [2025-10-10 16:51:51.843][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientOutHandlerC.write(22)]-C->客户端写入数据结束 
+    [2025-10-10 16:51:51.875][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientInHandlerA.channelRead(42)]-A->客户端接收消息开始，resp=你好，客户端 
+    [2025-10-10 16:51:51.875][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientInHandlerB.channelRead(17)]-B->客户端接收消息开始 
+    [2025-10-10 16:51:51.876][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientInHandlerC.channelRead(17)]-C->客户端接收消息开始 
+    [2025-10-10 16:51:51.876][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientInHandlerC.channelRead(19)]-C->客户端接收消息结束 
+    [2025-10-10 16:51:51.877][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClient.operationComplete(49)]-连接已关闭 
+    [2025-10-10 16:51:51.878][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientInHandlerB.channelRead(19)]-B->客户端接收消息结束 
+    [2025-10-10 16:51:51.878][][][][nioEventLoopGroup-2-1][WARN][io.netty.channel.DefaultChannelPipeline.onUnhandledInboundException(1152)]-An exceptionCaught() event was fired, and it reached at the tail of the pipeline. It usually means the last handler in the pipeline did not handle the exception. 
+    java.lang.ArithmeticException: / by zero
+    ```
+
 - 自己的异常自己捕获
 
     在这个场景中，我依然在HandlerA的`channelRead()`方法中抛出异常，并复写其exceptionCaught()方法，但是针对HandlerB和HandlerC不复写其`exceptionCaught()`方法。从下图中客户端运行日志的结果来看，HandlerA中ChannelRead()抛出的异常被自己的`exceptionCaught()`方法所捕获。
 
+    ```
+    [2025-10-10 16:53:24.746][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientInHandlerA.channelActive(23)]-A->客户端发送消息 
+    [2025-10-10 16:53:24.766][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientOutHandlerC.write(18)]-C->客户端写入数据开始 
+    [2025-10-10 16:53:24.767][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientOutHandlerB.write(18)]-B->客户端写入数据开始 
+    [2025-10-10 16:53:24.767][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientOutHandlerA.write(18)]-A->客户端写入数据开始 
+    [2025-10-10 16:53:24.767][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientOutHandlerA.write(23)]-A->客户端写入数据结束 
+    [2025-10-10 16:53:24.768][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientOutHandlerB.write(22)]-B->客户端写入数据结束 
+    [2025-10-10 16:53:24.768][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientOutHandlerC.write(22)]-C->客户端写入数据结束 
+    [2025-10-10 16:53:24.778][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientInHandlerA.channelRead(42)]-A->客户端接收消息开始，resp=你好，客户端 
+    [2025-10-10 16:53:24.779][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientInHandlerB.channelRead(17)]-B->客户端接收消息开始 
+    [2025-10-10 16:53:24.779][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientInHandlerC.channelRead(17)]-C->客户端接收消息开始 
+    [2025-10-10 16:53:24.779][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientInHandlerC.channelRead(19)]-C->客户端接收消息结束 
+    [2025-10-10 16:53:24.780][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClient.operationComplete(49)]-连接已关闭 
+    [2025-10-10 16:53:24.780][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientInHandlerB.channelRead(19)]-B->客户端接收消息结束 
+    [2025-10-10 16:53:24.781][][][][nioEventLoopGroup-2-1][ERROR][cn.bravedawn.echo.client.EchoClientInHandlerA.exceptionCaught(57)]-接收消息出现异常 
+    java.lang.ArithmeticException: / by zero
+    	at cn.bravedawn.echo.client.EchoClientInHandlerA.channelRead(EchoClientInHandlerA.java:44) ~[classes/:?]
+    ```
+
 - 前面抛出异常，后面处理
 
     在这个场景中，我们依然在HandlerA的`channelRead()`方法中抛出异常，但是并没有复写其`exceptionCaught()`方法，为了方便演示入站Handler的异常传播逻辑，我在HandlerC中复写了它的`exceptionCaught()`方法，从如下图中我们可以看出，在HandlerC中捕获了HandlerA的`channelRead()`方法抛出的异常。也就是说对于入站Handler，它的异常是顺序沿着Handler依次传递的。
+    
+    ```
+    [2025-10-10 16:54:25.860][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientInHandlerA.channelActive(23)]-A->客户端发送消息 
+    [2025-10-10 16:54:25.878][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientOutHandlerC.write(18)]-C->客户端写入数据开始 
+    [2025-10-10 16:54:25.879][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientOutHandlerB.write(18)]-B->客户端写入数据开始 
+    [2025-10-10 16:54:25.879][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientOutHandlerA.write(18)]-A->客户端写入数据开始 
+    [2025-10-10 16:54:25.880][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientOutHandlerA.write(23)]-A->客户端写入数据结束 
+    [2025-10-10 16:54:25.880][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientOutHandlerB.write(22)]-B->客户端写入数据结束 
+    [2025-10-10 16:54:25.880][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientOutHandlerC.write(22)]-C->客户端写入数据结束 
+    [2025-10-10 16:54:25.891][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientInHandlerA.channelRead(42)]-A->客户端接收消息开始，resp=你好，客户端 
+    [2025-10-10 16:54:25.891][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientInHandlerB.channelRead(17)]-B->客户端接收消息开始 
+    [2025-10-10 16:54:25.891][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientInHandlerC.channelRead(17)]-C->客户端接收消息开始 
+    [2025-10-10 16:54:25.892][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientInHandlerC.channelRead(19)]-C->客户端接收消息结束 
+    [2025-10-10 16:54:25.892][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClient.operationComplete(49)]-连接已关闭 
+    [2025-10-10 16:54:25.893][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientInHandlerB.channelRead(19)]-B->客户端接收消息结束 
+    [2025-10-10 16:54:25.893][][][][nioEventLoopGroup-2-1][ERROR][cn.bravedawn.echo.client.EchoClientInHandlerC.exceptionCaught(26)]-接收消息出现异常 
+    java.lang.ArithmeticException: / by zero
+    	at cn.bravedawn.echo.client.EchoClientInHandlerA.channelRead(EchoClientInHandlerA.java:44) ~[classes/:?]
+    ```
 
 ## 出站Handler的异常处理
 
@@ -32,11 +88,62 @@
 
     这个例子中，我们在HandlerA的`write()`方法中抛出了异常，但是没有做任何异常捕获，在这种情况下日志的输出如下图所示。可以看到Netty默认情况下是有异常捕获逻辑的，会将异常堆栈记录到Warn日志中。
 
+    ```
+    [2025-10-10 17:03:34.026][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientInHandlerA.channelActive(23)]-A->客户端发送消息 
+    [2025-10-10 17:03:34.048][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientOutHandlerC.write(18)]-C->客户端写入数据开始 
+    [2025-10-10 17:03:34.049][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientOutHandlerB.write(18)]-B->客户端写入数据开始 
+    [2025-10-10 17:03:34.049][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientOutHandlerA.write(18)]-A->客户端写入数据开始 
+    [2025-10-10 17:03:34.050][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientOutHandlerB.write(22)]-B->客户端写入数据结束 
+    [2025-10-10 17:03:34.051][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientOutHandlerC.write(22)]-C->客户端写入数据结束 
+    [2025-10-10 17:03:34.052][][][][nioEventLoopGroup-2-1][WARN][io.netty.channel.ChannelOutboundBuffer.trySuccess(53)]-Failed to mark a promise as success because it has failed already: DefaultChannelPromise@68c8f344(failure: java.lang.ArithmeticException: / by zero), unnotified cause: 
+    java.lang.ArithmeticException: / by zero
+    	at cn.bravedawn.echo.client.EchoClientOutHandlerA.write(EchoClientOutHandlerA.java:22) ~[classes/:?]
+    [2025-10-10 17:03:34.071][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientInHandlerA.channelRead(42)]-A->客户端接收消息开始，resp=你好，客户端 
+    [2025-10-10 17:03:34.072][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientInHandlerB.channelRead(17)]-B->客户端接收消息开始 
+    [2025-10-10 17:03:34.072][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientInHandlerC.channelRead(17)]-C->客户端接收消息开始 
+    [2025-10-10 17:03:34.072][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientInHandlerC.channelRead(19)]-C->客户端接收消息结束 
+    [2025-10-10 17:03:34.073][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClient.operationComplete(49)]-连接已关闭 
+    [2025-10-10 17:03:34.074][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientInHandlerB.channelRead(19)]-B->客户端接收消息结束 
+    [2025-10-10 17:03:34.074][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientInHandlerA.channelRead(45)]-A->客户端接收消息结束 
+    ```
+
 - 在发送消息时设置监听器
 
-    在我们发送消息的源头，也就是第一个调用`write()`和`writeAndFlush()`的地方，我们可以调用`addLister()`方法为`ChannelFuture`设置`ChannelFutureLister`，在这个监听器中打印异常堆栈信息和关闭连接。具体的代码如下：
+    在我们发送消息的源头，也就是第一个调用`write()`和`writeAndFlush()`的地方，我们可以调用`addLister()`方法为`ChannelFuture`设置`ChannelFutureLister`，在这个监听器中打印异常堆栈信息和关闭连接。具体的代码如下，这段代码在项目的`cn.bravedawn.echo.client.EchoClientInHandlerA#channelActive`方法中：
+    
+    ```
+    log.info("A->客户端发送消息");
+    ByteBuf byteBuf = ctx.alloc().buffer();
+    byteBuf.writeBytes("服务器你好".getBytes(StandardCharsets.UTF_8));
+    ChannelFuture channelFuture = ctx.writeAndFlush(byteBuf);
+    channelFuture.addListener(new ChannelFutureListener() {
+        @Override
+        public void operationComplete(ChannelFuture channelFuture) throws Exception {
+            if (!channelFuture.isSuccess()) {
+                log.error("发送消息出现异常", channelFuture.cause());
+                channelFuture.channel().close();
+            }
+        }
+    });
+    ```
 
-运行结果的日志截图如下，从下图中我们可以看到，日志中不仅打印出了Netty默认的Warn日志，还打印出了我们在监听器中的异常日志。
+    运行结果的日志如下，从下面的控制台打印中我们可以看到，日志中不仅打印出了Netty默认的Warn日志，还打印出了我们在监听器中的异常日志。
+    
+    ```
+    [2025-10-10 17:08:03.536][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientInHandlerA.channelActive(23)]-A->客户端发送消息 
+    [2025-10-10 17:08:03.558][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientOutHandlerC.write(18)]-C->客户端写入数据开始 
+    [2025-10-10 17:08:03.559][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientOutHandlerB.write(18)]-B->客户端写入数据开始 
+    [2025-10-10 17:08:03.559][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientOutHandlerA.write(18)]-A->客户端写入数据开始 
+    [2025-10-10 17:08:03.561][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientOutHandlerB.write(22)]-B->客户端写入数据结束 
+    [2025-10-10 17:08:03.561][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClientOutHandlerC.write(22)]-C->客户端写入数据结束 
+    [2025-10-10 17:08:03.564][][][][nioEventLoopGroup-2-1][WARN][io.netty.channel.ChannelOutboundBuffer.trySuccess(53)]-Failed to mark a promise as success because it has failed already: DefaultChannelPromise@68c8f344(failure: java.lang.ArithmeticException: / by zero), unnotified cause: 
+    java.lang.ArithmeticException: / by zero
+    	at cn.bravedawn.echo.client.EchoClientOutHandlerA.write(EchoClientOutHandlerA.java:22) ~[classes/:?]
+    [2025-10-10 17:08:03.575][][][][nioEventLoopGroup-2-1][ERROR][cn.bravedawn.echo.client.EchoClientInHandlerA.operationComplete(31)]-发送消息出现异常 
+    java.lang.ArithmeticException: / by zero
+    	at cn.bravedawn.echo.client.EchoClientOutHandlerA.write(EchoClientOutHandlerA.java:22) ~[classes/:?]
+    [2025-10-10 17:08:03.577][][][][nioEventLoopGroup-2-1][INFO][cn.bravedawn.echo.client.EchoClient.operationComplete(49)]-连接已关闭 
+    ```
 
 # channel.close()和channel.closeFuture().sync()的区别
 
@@ -118,9 +225,39 @@
 2. **lengthIncludesLengthFieldLength**：一个布尔值，指示长度字段是否包含它自身的大小。
 3. **lengthAdjustment**：一个整数，用于调整长度字段的值，通常用于协议中长度字段包含了额外的头部信息时。
 
+# 自定义解码计算报文长度的逻辑
+
+有些固定长度的报文，他的长度可能占用了6个字节，按照netty的设置，他只接受1，2，3，4或者8个字节的长度，如果是6个字节就会报错，因为无法转为`long`类型。这种情况下就需要我们复写`LengthFieldBasedFrameDecoder`的`getUnadjustedFrameLength()`方法，下面给出一个样例来参考：
+
+```java
+public class MsgFrameDecoder extends LengthFieldBasedFrameDecoder {
+
+    
+    public MsgFrameDecoder() {
+        super(Integer.MAX_VALUE, 0, 6, 4, 0, true);
+    }
+
+
+    /**
+     * 计算报文长度
+     * @param buf
+     * @param offset
+     * @param length
+     * @param order
+     * @return
+     */
+    @Override
+    protected long getUnadjustedFrameLength(ByteBuf buf, int offset, int length, ByteOrder order) {
+        byte[] bytes = new byte[length];
+        buf.getBytes(offset, bytes);
+        return Long.parseLong(ByteUtil.bytes2GBKStr(bytes));
+    }
+}
+```
+
 # 参考项目
 
-- depers/netty-handler
+- [depers/netty-handler](https://github.com/depers/JavaMall/tree/master/Netty/netty-handler)
 
 # 参考文章
 
