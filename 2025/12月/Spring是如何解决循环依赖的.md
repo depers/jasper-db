@@ -44,7 +44,7 @@ Spring 中使用提供了**三级缓存**解决循环的问题，三级缓存分
 
 对于 `scope` 为 `property` 的 Bean，三级缓存是没有解决循环依赖的。因为它们的作用域是原型，每次使用到时都会创建一个新对象，不进缓存。
 
-## 2. 通过构造器注入的类无法解决循环依赖
+通过构造器注入的类无法解决循环依赖
 
 ```TypeScript
 @Component
@@ -63,6 +63,9 @@ public class A {
     }
 
 }
+```
+
+```Java
 @Component
 public class B {
 
@@ -72,6 +75,9 @@ public class B {
         this.a = a;
     }
 }
+```
+
+```Java
 public class Test {
 
     public static void main(String[] args) {
