@@ -16,7 +16,39 @@ Spring 中使用提供了**三级缓存**解决循环的问题，三级缓存分
 
 - **SingletonObjects**：**一级缓存**，存储完整的 Bean
 - **EarlySingletonObjects**：**二级缓存**，存储从第三级缓存中创建出代理对象的 Bean，即半成品的 Bean
-- **SingletonFactory**：**三级缓存**，提前暴露的一个单例工厂，二级缓存中存储的就是从这个工厂中获取到的对象
+- **SingletonFactories**：**三级缓存**，提前暴露的一个单例工厂，二级缓存中存储的就是从这个工厂中获取到的对象
+
+三级缓存的核心逻辑在`org.springframework.beans.factory.support.DefaultSingletonBeanRegistry#getSingleton(java.lang.String, boolean)`：
+
+```Java
+protected Object getSingleton(String beanName, boolean allowEarlyReference) {
+    // Quick check for existing instance without full singleton lock
+    Object singletonObject = this.singletonObjects.get(beanName);
+    if (singletonObject == null && isSingletonCurrentlyInCreation(beanName)) {
+        singletonObject = this.earlySingletonObjects.get(beanName);
+        if (singletonObject == null && allowEarlyReference) {
+            synchronized (this.singletonObjects) {
+                // Consistent creation of early reference within full singleton lock
+                singletonObject = this.singletonObjects.get(beanName);
+                if (singletonObject == null) {
+                    singletonObject = this.earlySingletonObjects.get(beanName);
+                    if (singletonObject == null) {
+                        ObjectFactory<?> singletonFactory = this.singletonFactories.get(beanName);
+                        if (singletonFactory != null) {
+                            singletonObject = singletonFactory.getObject();
+                            this.earlySingletonObjects.put(beanName, singletonObject);
+                            this.singletonFactories.remove(beanName);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return singletonObject;
+}
+```
+
+
 
 # 程序调用图
 
