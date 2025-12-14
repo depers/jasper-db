@@ -150,6 +150,22 @@ JOIN users u ON ...
 
 ## 5. 合理使用联合索引（顺序非常关键）
 
+### 对于驱动表
+
+```Java
+SELECT * FROM a LEFT JOIN b ON a.col1 = b.col1 where a.col2 = '1' GROUP BY a.col3
+这句sql中a表和b表如何建立索引
+```
+
+
+
+### 对于被驱动表
+
+```Java
+SELECT * FROM a LEFT JOIN b ON a.col1 = b.col1 where b.col2 = '1' GROUP BY b.col3
+这句sql中a表和b表如何建立索引
+```
+
 
 
 # join查询的错误点
