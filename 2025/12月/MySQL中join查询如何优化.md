@@ -150,14 +150,80 @@ JOIN users u ON ...
 
 ## 5. 合理使用联合索引（顺序非常关键）
 
-### 对于驱动表
+```sql
+create table `a` (
+	`id` int primary key auto_increment comment '主键',
+	`col1` varchar(20) not null default '' comment 'col1',
+	`col2` varchar(20) not null default '' comment 'col2',
+	`col3` varchar(20) not null default '' comment 'col3'
+)engine=innodb comment '表a';
 
-```Java
-SELECT * FROM a LEFT JOIN b ON a.col1 = b.col1 where a.col2 = '1' GROUP BY a.col3
-这句sql中a表和b表如何建立索引
+create table `b` (
+	`id` int primary key auto_increment comment '主键',
+	`col1` varchar(20) not null default '' comment 'col1',
+	`col2` varchar(20) not null default '' comment 'col2',
+	`col3` varchar(20) not null default '' comment 'col3'
+)engine=innodb comment '表b';
 ```
 
+### 对于驱动表
 
+```sql
+SELECT * FROM a LEFT JOIN b ON a.col1 = b.col1 where a.col2 = '1' GROUP BY a.col3
+```
+
+这句sql中a表和b表如何建立索引?
+
+#### 第一组
+
+```sql
+CREATE INDEX idx_a_col2_col3_col1 ON a(col2, col3, col1);
+CREATE INDEX idx_b_col1 ON b(col1);
+```
+
+建立上述索引之后，使用explain查看执行计划：
+
+![](../../assert/join-index_1.png)
+
+为什么是这个顺序？
+
+1. col2 在最前
+
+    - 等值过滤
+
+    - 缩小扫描行数（最重要）
+
+2. col3 放中间
+    * GROUP BY 可以直接走索引顺序
+    * 避免 `Using temporary; Using filesort`
+
+3.  col1 放最后
+
+    - JOIN 时顺带使用
+
+    - 减少回表
+
+#### 第二组
+
+```Java
+CREATE INDEX idx_a_col2_col3 ON a(col2, col3);
+CREATE INDEX idx_b_col1 ON b(col1);
+```
+
+建立上述索引之后，使用explain查看执行计划：
+
+![](../../assert/join-index_2.png)
+
+#### 第三组
+
+```Java
+CREATE INDEX idx_a_col2_col1_col3 ON a(col2, col1, col3);
+CREATE INDEX idx_b_col1 ON b(col1);
+```
+
+建立上述索引之后，使用explain查看执行计划：
+
+![](../../assert/join-index_3.png)
 
 ### 对于被驱动表
 
