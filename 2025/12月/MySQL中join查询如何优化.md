@@ -31,16 +31,67 @@ CREATE TABLE order_items (
     subtotal DECIMAL(10, 2) NOT NULL COMMENT '小计金额 = unit_price * quantity',
     create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='订单详情表';
-
-CREATE TABLE order_items (
-  id BIGINT PRIMARY KEY,
-  order_id BIGINT,
-  status TINYINT,
-  create_time DATETIME,
-  amount DECIMAL(10,2)
-);
-
 ```
+
+# join查询的顺序
+
+先来看一段sql：
+
+```Java
+select * from order o 
+left join order_items oi on o.id = oi.order_id
+where o.status = 1 and oi.quantity = 1;
+```
+
+让我们站在MySQL优化器的角度想一下该如何执行这条sql：
+
+1. 逻辑转换：从 LEFT JOIN 到 INNER JOIN
+
+    因为where条件中使用了`oi.quantity = 1`，所以任何 oi 为 NULL 的行都会被`oi.quantity=1`过滤掉，这条sql会变成内连接查询：
+
+    ```sql
+    SELECT *
+    FROM order o
+    JOIN order_items oi ON o.id = oi.order_id
+    WHERE o.status = 1
+    AND oi.quantity = 1;
+    ```
+
+2. 优化阶段：选择驱动表
+
+    因为变成了内循环，所以MySQL优化器需要重新估算扫描行数和索引效率，决定谁是驱动表。这里我们不确定两张表的各自的总行数，没有新建索引的情况下。
+
+    - **场景 A（o 为驱动表）：** 如果 `status` 上有高效索引，或者 `o` 表满足条件的行数很少。
+    - **场景 B（oi 为驱动表）：** 如果 `quantity` 上有高效索引，优化器可能选择先扫描 `oi`。
+
+    通常情况下，MySQL 遵循**“小结果集驱动大结果集”**的原则。
+
+3. 执行阶段：嵌套循环关联 (Nested Loop Join)
+
+    假设优化器选择了 `order o` 作为驱动表，执行流程如下：
+
+    1. **扫描驱动表（o）：**
+        - 通过索引（如 `status` 的索引）或者全表扫描，找出所有 `status = 1` 的记录。
+    2. **逐行匹配（Loop）：** 对于读取到的每一条 `o` 表记录，获取其 `id` 值。
+    3. **查询被驱动表（oi）：**
+        - 使用 `o.id` 去 `order_items` 表中查找。
+        - **理想状态：** `oi.order_id` 上有索引。MySQL 会直接通过索引定位到关联的行，而不是扫描整个 `oi` 表。
+    4. **应用右表过滤：**
+        - 在关联到的 `oi` 行中，检查 `quantity = 1` 是否成立。
+    5. **结果合并：**
+        - 如果匹配成功且条件成立，则将 `o` 和 `oi` 的列合并存入结果集。
+
+# join查询优化算法
+
+## 1. Simple Nested-Loop Join(SNJJ，简单嵌套循环连接)
+
+## 2. Index Nested-Loop Join (INLJ, 索引嵌套循环连接)
+
+## 3. Block Nested-Loop Join (BNL, 块嵌套循环连接)
+
+## 4. Batched Key Access (BKA, 批量键访问)
+
+## 5. Hash Join (哈希连接)
 
 # join查询的优化要点
 
@@ -81,155 +132,6 @@ MySQL 通常会自动优化，但以下情况会出问题：
 SELECT *
 FROM small_table
 STRAIGHT_JOIN big_table ON ...
-```
-
-## 3. 用 ON 过滤，而不是 JOIN 后过滤
-
-查询sql：
-
-```sql
-SELECT *
-FROM orders o
-JOIN order_items oi ON o.id = oi.order_id AND oi.quantity = 1;
-```
-
-创建索引：
-
-```Java
-orders(id)
-order_items(order_id, quantity)
-```
-
-值得注意的是这是一个内连接查询，在INNER JOIN中，on条件和where条件其实是等价的，为什么INNER JOIN中 `ON` 里可以“过滤 order_items 表”，执行逻辑如下：
-
-```Java
-1. 从 orders 取一行
-2. 到 order_items 表中找：
-   - oi.order_id = o.id
-   - 且 oi.quantity = 1
-3. 找不到 → 整行丢弃
-```
-
-如果将上面内连接改为左外连接呢？
-
-```Java
--- 看起来是 LEFT JOIN
-SELECT *
-FROM orders o
-LEFT JOIN users u ON o.user_id = u.id
-WHERE u.status = 1;
-```
-
-实际的效果：
-
-```Java
-u.status = 1 为 NULL 的行被 WHERE 过滤掉
-→ LEFT JOIN 退化成 INNER JOIN
-```
-
-上面这句sql的查询结果和使用INNER JOIN查询到的结果是一致的，如果你真实的目的是LEFT JOIN，但是执行结果却是INNER JOIN的效果，那代码的逻辑就错了。
-
-**ON 是 JOIN 时的匹配条件，WHERE 的真正职责是：过滤“已经 JOIN 完成后的结果集”。**
-
-所以，如果你是内连接查询where条件写到on或是where后都可以，如果是外连接查询，就要注意了。
-
-## 4. 控制返回列，避免 `SELECT *`
-
-查询sql：
-
-```sql
-SELECT o.id, o.create_time, u.name
-FROM orders o
-JOIN users u ON ...
-```
-
-好处：
-
-- 减少 IO
-- 覆盖索引更容易生效
-
-## 5. 合理使用联合索引（顺序非常关键）
-
-```sql
-create table `a` (
-	`id` int primary key auto_increment comment '主键',
-	`col1` varchar(20) not null default '' comment 'col1',
-	`col2` varchar(20) not null default '' comment 'col2',
-	`col3` varchar(20) not null default '' comment 'col3'
-)engine=innodb comment '表a';
-
-create table `b` (
-	`id` int primary key auto_increment comment '主键',
-	`col1` varchar(20) not null default '' comment 'col1',
-	`col2` varchar(20) not null default '' comment 'col2',
-	`col3` varchar(20) not null default '' comment 'col3'
-)engine=innodb comment '表b';
-```
-
-### 对于驱动表
-
-```sql
-SELECT * FROM a LEFT JOIN b ON a.col1 = b.col1 where a.col2 = '1' GROUP BY a.col3
-```
-
-这句sql中a表和b表如何建立索引?
-
-#### 第一组
-
-```sql
-CREATE INDEX idx_a_col2_col3_col1 ON a(col2, col3, col1);
-CREATE INDEX idx_b_col1 ON b(col1);
-```
-
-建立上述索引之后，使用explain查看执行计划：
-
-![](../../assert/join-index_1.png)
-
-为什么是这个顺序？
-
-1. col2 在最前
-
-    - 等值过滤
-
-    - 缩小扫描行数（最重要）
-
-2. col3 放中间
-    * GROUP BY 可以直接走索引顺序
-    * 避免 `Using temporary; Using filesort`
-
-3.  col1 放最后
-
-    - JOIN 时顺带使用
-
-    - 减少回表
-
-#### 第二组
-
-```Java
-CREATE INDEX idx_a_col2_col3 ON a(col2, col3);
-CREATE INDEX idx_b_col1 ON b(col1);
-```
-
-建立上述索引之后，使用explain查看执行计划：
-
-![](../../assert/join-index_2.png)
-
-#### 第三组
-
-```Java
-CREATE INDEX idx_a_col2_col1_col3 ON a(col2, col1, col3);
-CREATE INDEX idx_b_col1 ON b(col1);
-```
-
-建立上述索引之后，使用explain查看执行计划：
-
-![](../../assert/join-index_3.png)
-
-### 对于被驱动表
-
-```Java
-SELECT * FROM a LEFT JOIN b ON a.col1 = b.col1 where b.col2 = '1' GROUP BY b.col3
-这句sql中a表和b表如何建立索引
 ```
 
 
