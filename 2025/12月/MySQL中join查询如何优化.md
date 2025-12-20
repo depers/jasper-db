@@ -48,7 +48,7 @@ INSERT INTO order_items (id, order_id, product_id, product_name, unit_price, qua
 
 先来看一段sql：
 
-```Java
+```sql
 select * from order o 
 left join order_items oi on o.id = oi.order_id
 where o.status = 1 and oi.quantity = 1;
@@ -100,13 +100,13 @@ where o.status = 1 and oi.quantity = 1;
 
 对于`orders`表，如果我们添加如下索引：
 
-```Java
+```sql
 alter table `orders` add index `idx_status_id` (`status`, `id`);
 ```
 
 对于`order_items`表，我们添加如下索引：
 
-```Java
+```sql
 alter table `order_items` add index `idx_order_id` (`order_id`);
 ```
 
@@ -132,7 +132,7 @@ alter table `order_items` add index `idx_order_id` (`order_id`);
 
 所以这里我觉得最后的索引是：
 
-```Java
+```sql
 alter table `orders` add index `idx_status_id` (`status`, `id`);
 alter table `order_items` add index `idx_quantity_order_id` (`quantity`, `order_id`);
 ```
