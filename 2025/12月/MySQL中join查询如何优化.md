@@ -31,6 +31,17 @@ CREATE TABLE order_items (
     subtotal DECIMAL(10, 2) NOT NULL COMMENT '小计金额 = unit_price * quantity',
     create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='订单详情表';
+
+INSERT INTO orders (id, order_no, user_id, total_amount, status, payment_method, payment_time, create_time, update_time) VALUES(1, '2025122001', 221, 518.20, 1, 1, '2025-12-20 18:20:12', '2025-12-20 21:50:30', '2025-12-20 21:50:30');
+INSERT INTO orders (id, order_no, user_id, total_amount, status, payment_method, payment_time, create_time, update_time) VALUES(2, '2025122002', 222, 299.00, 1, 1, '2025-12-20 18:20:12', '2025-12-20 21:50:30', '2025-12-20 21:50:30');
+INSERT INTO orders (id, order_no, user_id, total_amount, status, payment_method, payment_time, create_time, update_time) VALUES(3, '2025122003', 223, 320.20, 1, 1, '2025-12-20 18:20:12', '2025-12-20 21:50:30', '2025-12-20 21:50:30');
+
+
+INSERT INTO order_items (id, order_id, product_id, product_name, unit_price, quantity, subtotal, create_time) VALUES(1, 1, 1, 'iphone17 pro', 518.20, 1, 518.20, '2025-12-20 21:52:55');
+INSERT INTO order_items (id, order_id, product_id, product_name, unit_price, quantity, subtotal, create_time) VALUES(2, 1, 1, 'iphone15 pro', 518.20, 1, 518.20, '2025-12-20 21:52:55');
+INSERT INTO order_items (id, order_id, product_id, product_name, unit_price, quantity, subtotal, create_time) VALUES(3, 2, 2, '耳机', 299.00, 1, 299.00, '2025-12-20 21:54:11');
+INSERT INTO order_items (id, order_id, product_id, product_name, unit_price, quantity, subtotal, create_time) VALUES(4, 3, 3, '帽子', 320.20, 1, 320.20, '2025-12-20 21:54:33');
+
 ```
 
 # join查询的顺序
@@ -80,6 +91,71 @@ where o.status = 1 and oi.quantity = 1;
         - 在关联到的 `oi` 行中，检查 `quantity = 1` 是否成立。
     5. **结果合并：**
         - 如果匹配成功且条件成立，则将 `o` 和 `oi` 的列合并存入结果集。
+
+通过上面的描述，如果在完全不加索引的情况下，我们来看下执行计划：
+
+![](../../assert/join_index_1.png)
+
+从上面的执行计划中我们可以看出，因为上面这句sql被转化为了INNER  JOIN，所以驱动表的选择由优化器决定，从上面可以看出，MySQL选择了`order_items`作为了驱动表，原因也很简单，就是如果选择`orders`作为驱动表的话，两张表都会走全表扫描，而如果使用`order_items`作为驱动表的话，可以使用`orders`表的id索引。
+
+对于`orders`表，如果我们添加如下索引：
+
+```Java
+alter table `orders` add index `idx_status_id` (`status`, `id`);
+```
+
+对于`order_items`表，我们添加如下索引：
+
+```Java
+alter table `order_items` add index `idx_order_id` (`order_id`);
+```
+
+加上这两条索引之后，我们再执行一次`explain`查看下执行计划：
+
+![](../../assert/join_index_2.png)
+
+你会发现，优化器这一次还是将`order_items`作为驱动表。我们来分析一下：
+
+1. 如果`orders`作为驱动表
+    * 首先会全表扫描`orders`表，筛选出`status=1`的记录
+    * 拿着订单的id去`order_items`的`idx_order_id`索引寻找匹配项
+    * 回表`order_item`，过滤`quantity=1`
+2. 如果`order_items`作为驱动表
+    * 首先会全表扫描`order_items`表，筛选出`quantity=1`的记录
+    * 拿着记录的`order_id`去`orders`表中查找，此时使用的是 **`orders` 表的主键索引**
+    * 检查 `status = 1`。
+
+**优化器倾向于方案 B 的原因是：**
+
+- **主键查找极快**：使用 `order_items` 驱动时，在 `orders` 表中是基于 `id`（主键）进行等值查询。在 InnoDB 中，主键查找是效率最高的（聚簇索引），不需要二次回表。
+- **数据量估算（Statistics）**：如果 MySQL认为扫描 `order_items` 并通过主键回查 `orders` 的总成本低于全表扫描 `orders` 表再查 `order_items` 辅助索引的成本，它就会反转驱动顺序。
+
+所以这里我觉得最后的索引是：
+
+```Java
+alter table `orders` add index `idx_status_id` (`status`, `id`);
+alter table `order_items` add index `idx_quantity_order_id` (`quantity`, `order_id`);
+```
+
+此时的执行计划：
+
+![](../../assert/join_index_3.png)
+
+所以针对join查询新建索引，我的建议是：
+
+1. 选择驱动表和被驱动表，这里我们按照表数据量的大小来做判断，表数据量小的为驱动表
+
+2. 对于驱动表，如何新建索引
+
+    1. 如果有该表的where条件，对于where条件后面的字段要建索引。
+
+    1. 对于join之后的字段也要建索引。
+
+3. 对于被驱动表，如何新建索引
+
+    1. 如果有该表的where条件，对于where条件后面的字段要建索引。
+
+    1. 对于join之后的字段也要建索引。
 
 # join查询优化算法
 
