@@ -161,46 +161,135 @@ alter table `order_items` add index `idx_quantity_order_id` (`quantity`, `order_
 
 ## 1. Simple Nested-Loop Join(SNJJ，简单嵌套循环连接)
 
+算法思想：
+
+* 对于驱动表取出每一行。
+* 对于被驱动表是全表扫描，拿着这一行驱动表记录去和被驱动表进行匹配。
+
+通俗来讲，就是驱动表有10行记录，被驱动表有100行记录，一共要读取10*100=1000行数据，开销极大，效率很低。
+
 ## 2. Index Nested-Loop Join (INLJ, 索引嵌套循环连接)
+
+算法思想：
+
+* 前提是**被驱动表中关联查询的字段上面要有索引**，就是on条件后面被驱动表的字段要有索引。
+* 从驱动表取出一行数据，根据关联字段直接通过索引去被驱动表中查找。
+
+优点在于，避免了全表扫描被驱动表，查询效率由$O(N \times M)$ 降低为$O(N \times \log M)$（其中 $N$ 为驱动表行数，$M$ 为被驱动表行数）。
 
 ## 3. Block Nested-Loop Join (BNL, 块嵌套循环连接)
 
+算法思想：
+
+* **当被驱动表关联字段没有索引时**，MySQL 为了避免 SNLJ 导致的频繁磁盘 I/O，会使用 BNLJ。
+* **Join Buffer（连接缓冲区）**：MySQL 会开辟一块内存（`join_buffer_size`），一次性把驱动表的若干行数据加载进去。
+* **扫描方式**：扫描一遍被驱动表，将被驱动表的每一行与 Buffer 中的所有驱动表数据进行比对。
+
+**优点**：减少了扫描被驱动表的次数。例如 Buffer 能存 10 行，那么扫描被驱动表的次数就减少到了原来的 1/10。
+
+ join_buffer 在 BNL 算法里的作用，是暂存驱动表的数据。
+
 ## 4. Batched Key Access (BKA, 批量键访问)
+
+### MRR优化
+
+假设我们新建了一张表t1，具体sql如下：
+
+```sql
+create table `t1` (
+  `id` int primary key auto_increment comment '主键',
+  `a` int not null default '0' comment 'a字段',
+  key `idx_a` (`a`)
+) engine=innodb comment 't1表';
+
+-- 插入一千行数据
+drop procedure if exists idata;
+delimiter $$
+create procedure idata()
+begin 
+  declare i int; 
+  set i=1; 
+  while(i<=1000)do 
+    insert into t1 values(i, 1001-i); 
+    set i=i+1; 
+  end while; 
+end$$
+delimiter ;
+call idata();
+```
+
+接着我们执行下面这条语句：
+
+```Java
+select * from t1 where a>=1 and a<=100;
+```
+
+因为给`a`字段加了索引，所以这句sql会先去非聚簇索引树上查询满足条件的a和id，然后再一行一行的到聚簇索引上进行回表查询，我们之间有意将a字段和id的循序做成逆序的效果是，如果a为100，id为1；如果a为1，id为100，也就是id是倒序的，这样回表操作就会变成随机访问，性能很差。**如果按照主键的递增顺序查询的话，对磁盘的读比较接近顺序读，能够提升读性能。**
+
+MRR 优化的设计思路。此时，语句的执行流程变成了这样：
+
+1. 根据索引 a，定位到满足条件的记录，将 id 值放入 read_rnd_buffer 中 ;
+2. 将 read_rnd_buffer 中的 id 进行递增排序；
+3. 排序后的 id 数组，依次到主键 id 索引中查记录，并作为结果返回。
+
+>  read_rnd_buffer 的大小是由 read_rnd_buffer_size 参数控制的。
+>
+> 另外需要说明的是，如果你想要稳定地使用 MRR 优化的话，需要设置set optimizer_switch="mrr_cost_based=off"。
+
+此时执行explain查询执行计划：
+
+![](../../assert/mrr.webp)
+
+**MRR 能够提升性能的核心**在于，这条查询语句在索引 a 上做的是一个范围查询（也就是说，这是一个多值查询），可以得到足够多的主键 id。这样通过排序以后，再去主键索引查数据，才能体现出“顺序性”的优势。
+
+### Batched Key Access (BKA)
+
+BKA是对 **Index Nested-Loop Join** 的一种增强，通常配合 **MRR (Multi-Range Read)** 技术使用。
+
+算法思想：
+
+* 将驱动表的join key取出放到join buffer中。
+* 将驱动表的join key排序后批量发送给被驱动表的索引。
+* 对被驱动表进行“批量索引查找”，一次性返回匹配行。
+
+如果要使用 BKA 优化算法的话，你需要在执行 SQL 语句之前，先设置：
+
+```Java
+set optimizer_switch='mrr=on,mrr_cost_based=off,batched_key_access=on';
+```
+
+其中，前两个参数的作用是要启用 MRR。这么做的原因是，BKA 算法的优化要依赖于 MRR。
 
 ## 5. Hash Join (哈希连接)
 
+在 **MySQL 8.0.18** 之后，官方引入了 Hash Join 来替代 BNLJ，成为处理**等值连接（Equi-join）且无索引**场景的主流算法。
+
+算法思想：
+
+* 将驱动表的数据按 Join Key 计算 Hash 值，存入内存中的 Hash Table。
+* 扫描被驱动表，对每一行计算 Hash 值，去 Hash Table 中直接匹配。
+
+- **优点**：通常比 BNLJ 快得多，因为它将匹配的时间复杂度从 $O(N)$ 降到了 $O(1)$。
+
+> **注意**：从 MySQL 8.0.20 开始，BNLJ 已被完全废弃，所有原本使用 BNLJ 的场景都会自动切换为 Hash Join。
+
 # join查询的优化要点
 
-## 1. JOIN 字段必须有索引
+## 1. 索引优化
 
-查询sql：
+* **为被驱动表（Inner Table）的关联字段建立索引**：确保 `ON` 子句中的字段在被驱动表中都有索引。这样 MySQL 可以将算法从效率极低的 BNLJ 或 Hash Join 转换为高效的 **Index Nested-Loop Join (INLJ)**。
 
-```sql
-SELECT *
-FROM orders o
-JOIN order_items i ON o.id = i.order_id;
-```
+* **保证字段类型完全一致**：连接字段的**数据类型**、**字符集（Charset）**和**排序规则（Collation）**必须一致。如果一个是 `int` 另一个是 `varchar`，或者一个是 `utf8` 另一个是 `utf8mb4`，索引将失效，导致隐式类型转换。
 
-索引设计：
+* **覆盖索引（Covering Index）**：如果索引中已经包含了 `SELECT` 和 `ON` 需要的所有字段，MySQL 就可以直接从索引树中读取数据，无需回表（Look up the actual data rows），速度会提升数倍。
 
-```Java
-orders(id)           -- 主键
-order_items(order_id) -- 外键索引
-```
+## 2. “小表驱动大表”：执行顺序优化
 
-## 2. 小表驱动大表（连接顺序）
-
-原则：**行数少、过滤条件多的表 → 放在前面**，尽量让结果集最小的表作为**驱动表（Driving Table）**。
+**驱动表的定义**：这里的“小表”并不是指总行数少的表，而是指**经过 `WHERE` 条件过滤后，参与 JOIN 的结果集较小**的表。
 
 **对于 `INNER JOIN`：** MySQL 通常会自动选择小表驱动大表，但如果使用了 `STRAIGHT_JOIN` 关键字，MySQL 会强制按照语句中表的顺序进行 JOIN。
 
 **对于 `LEFT JOIN`：** 左表是驱动表，右表是被驱动表。优化器不会改变这个顺序。确保左表的数据量相对较小，或者在左表的 WHERE 条件能显著过滤数据。
-
-MySQL 通常会自动优化，但以下情况会出问题：
-
-- 统计信息不准
-- 使用 `STRAIGHT_JOIN`
-- 复杂子查询
 
 可以强制指定顺序：
 
@@ -210,11 +299,29 @@ FROM small_table
 STRAIGHT_JOIN big_table ON ...
 ```
 
+**提前过滤**：尽量在 JOIN 之前通过 `WHERE` 子句过滤掉不必要的数据。
 
+## 3. SQL 编写技巧
 
-# join查询的错误点
+**拒绝 `SELECT *`**：只取需要的列。这不仅减少了网络传输，更重要的是能让 **Join Buffer** 存储更多的行。Buffer 存得越多，扫描被驱动表的次数就越少。
 
+**优先使用 INNER JOIN**：如果不需要保留左/右表的 NULL 记录，优先使用 `INNER JOIN`。`LEFT JOIN` 会限制优化器的调整空间（因为它必须先读左表）。
 
+**避免在关联字段上使用函数**：
+
+- ❌ `ON DATE(a.time) = b.date`（索引失效）
+- ✅ `ON a.time >= '2025-01-01' AND a.time < '2025-01-02'`
+
+## 4. 系统参数微调
+
+当无法通过索引优化（如非等值连接或临时表操作）时，可以调整内存参数：
+
+- **`join_buffer_size`**：控制 Block Nested-Loop Join 使用的内存大小。
+    - 如果有很多没有索引的 JOIN，可以适当调大该值（默认通常为 256KB）。
+    - **建议**：仅在当前会话（Session）中调大，避免全局设置导致内存溢出。
+- **`optimizer_switch`**：
+    - 在 MySQL 8.0 中，可以控制是否开启 **Hash Join**。
+    - 在支持 **BKA (Batched Key Access)** 的场景下，确保 `mrr=on, mrr_cost_based=off, batched_key_access=on` 开启，以提升磁盘顺序读取性能。
 
 # 参考文章
 
