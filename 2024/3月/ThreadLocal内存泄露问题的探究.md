@@ -1,6 +1,6 @@
-> Java/并发编程
-
-> 最近发现使用ThreadLocal会导致内存泄露，写一篇文章对这个问题进行记录。
+| title                         | tags          | background                                                   | auther | isSlow |
+| ----------------------------- | ------------- | ------------------------------------------------------------ | ------ | ------ |
+| ThreadLocal内存泄漏问题的探究 | Java/并发编程 | 最近发现使用ThreadLocal会导致内存泄露，写一篇文章对这个问题进行记录。 | depers | true   |
 
 # ThreadLocal的结构
 
@@ -187,6 +187,8 @@ private static void func() {
 
 # ThreadLocal使用了弱引用怎么还会内存泄露
 
+## 案例演示
+
 这里我们先来看一个例子：
 
 ```Java
@@ -237,6 +239,10 @@ public class ThreadLocalExample5 {
 
 此时我们发现，经过GC之后原本作为key的`ThreadLocal`对象，由于是弱引用的关系导致内存空间被垃圾回收，置为了`null`。但是这里就浮现出来一个问题，既然`key`所占用的空间被垃圾回收了，那`value`占用的空间该怎么办，**如果我们一直添加数据到当前线程的`threadLocals`中肯定会导致内存泄露的**。
 
+## ThreadLocal的get和set方法都会对key为null的value进行清除，为什么还会内存泄漏呢？
+
+
+
 我们接着执行我们刚才的程序，接着我们执行第11次添加`ThreadLocal`对象的操作，下面我们看下`ThreadLoal`的`set()`方法：
 
 ```Java
@@ -263,6 +269,8 @@ private void set(ThreadLocal<?> key, Object value) {
 
         // 如果key值为null
         if (e.refersTo(null)) {
+            // 在 set() 过程中，线性探测时遇到了一个 key == null 的 Entry
+            // 删除已经过期的 Entry（Key 为 null 的数据）
             replaceStaleEntry(key, value, i);
             return;
         }
@@ -278,7 +286,66 @@ private void set(ThreadLocal<?> key, Object value) {
 }
 ```
 
-接下来我们着重看下cleanSomeSlots()方法的代码：
+接着我们来看下`replaceStaleEntry()`方法的代码：
+
+```java
+private void replaceStaleEntry(ThreadLocal<?> key, Object value,
+                               int staleSlot) {
+    Entry[] tab = table;
+    int len = tab.length;
+    Entry e;
+
+    // 1.找到当前 run（连续探测区间） 的边界
+    // 目的：继续往左找，确保我们从 run 中最靠左的 stale entry 开始清理
+    // 逻辑：从当前 staleSlot 开始往前扫，直到遇到 null。如果发现更靠前的过期项，就更新 slotToExpunge。这样可以一次性清理更大范围的过期数据，减少哈希冲突带来的性能损耗。
+    int slotToExpunge = staleSlot;
+    for (int i = prevIndex(staleSlot, len);
+         (e = tab[i]) != null;
+         i = prevIndex(i, len))
+        if (e.refersTo(null)) // e.get() == null 的现代写法
+            slotToExpunge = i;
+
+    // 2.如果 run 里已经存在 key → 复用并修正位置
+    for (int i = nextIndex(staleSlot, len);
+         (e = tab[i]) != null;
+         i = nextIndex(i, len)) {
+
+        f (e.refersTo(key)) { // 找到了目标 Key
+            e.value = value;   // 更新最新的 value
+
+            // 关键操作：交换位置
+            // 为什么要交换？ 如果 Key 已经在位置 i 了，而 staleSlot 在 i 之前，如果不交换，直接在 staleSlot 插入新值，那么同一个 Key 就会在 Map 中出现两次！交换是为了保证同一个 Key 始终占据探测路径上最靠前的位置。
+            tab[i] = tab[staleSlot];
+            tab[staleSlot] = e;
+
+            // 如果向前扫描没发现过期项，那么现在的 i 就是第一个过期项
+            if (slotToExpunge == staleSlot)
+                slotToExpunge = i;
+
+            // 触发连续清理
+            // 交换后，原本 staleSlot 的垃圾被挪到了 i，所以清理工作从 slotToExpunge 开始。
+            cleanSomeSlots(expungeStaleEntry(slotToExpunge), len);
+            return;
+        }
+
+        // 如果向后扫描遇到了新的过期项，且前面也没发现过期项
+        if (e.refersTo(null) && slotToExpunge == staleSlot)
+            slotToExpunge = i;
+    }
+
+    // 如果循环结束没 return，说明 Key 不存在，直接占领这个废弃槽位
+    tab[staleSlot].value = null; // 帮助 GC
+    tab[staleSlot] = new Entry(key, value);
+
+    // 如果除了 staleSlot 以外还有其他过期项，触发清理
+    if (slotToExpunge != staleSlot)
+        cleanSomeSlots(expungeStaleEntry(slotToExpunge), len);
+}
+```
+
+
+
+接下来我们着重看下`cleanSomeSlots()`方法的代码：
 
 ```Java
 private boolean cleanSomeSlots(int i, int n) {
@@ -307,37 +374,45 @@ private int expungeStaleEntry(int staleSlot) {
     Entry[] tab = table;
     int len = tab.length;
 
-    // expunge entry at staleSlot
-    // 看这里就很重要，这里将value值置为了null，在这里剪断了Entry和value之间的引用关系，value的内存空间得以释放
-    tab[staleSlot].value = null;
-    tab[staleSlot] = null;
-    size--;
+    // 1. 清理当前传入的过期槽位 (staleSlot)
+    tab[staleSlot].value = null; // 显式将 value 置空，这是防止内存泄漏的关键
+    tab[staleSlot] = null;       // 释放 Entry 对象
+    size--;                      // 容器内元素个数减 1
 
-    // Rehash until we encounter null
+    // 2. 向后探测，直到遇到下一个 null 槽位为止
     Entry e;
     int i;
+    // 从 staleSlot 的下一个索引开始循环
     for (i = nextIndex(staleSlot, len);
-         (e = tab[i]) != null;
+         (e = tab[i]) != null; // 只要 Entry 不为 null，说明是一段连续的探测路径
          i = nextIndex(i, len)) {
-        ThreadLocal<?> k = e.get();
-        // 这里的也是将value置为null的逻辑
-        if (k == null) {
-            e.value = null;
-            tab[i] = null;
-            size--;
-        } else {
-            int h = k.threadLocalHashCode & (len - 1);
-            if (h != i) {
-                tab[i] = null;
+        
+        ThreadLocal<?> k = e.get(); // 获取该 Entry 的 Key (ThreadLocal 实例)
 
-                // Unlike Knuth 6.4 Algorithm R, we must scan until
-                // null because multiple entries could have been stale.
+        if (k == null) {
+            // 情况 A：发现另一个过期的槽位
+            e.value = null; // 同样清理 value
+            tab[i] = null;  // 释放 Entry
+            size--;         // 数量减少
+        } else {
+            // 情况 B：发现一个有效的 Entry，尝试对其重新计算位置（Rehash）
+            // 计算这个 key 在当前数组长度下理论上的“原始位置”
+            int h = k.threadLocalHashCode & (len - 1);
+            
+            // 如果理论位置 h 不等于当前实际位置 i，说明这个 entry 之前由于哈希冲突发生了位移
+            if (h != i) {
+                tab[i] = null; // 将其从当前位置挪走
+
+                // 重新寻找最近的一个空位放置它
+                // 这一步非常关键：它能让由于之前清理导致的“空洞”被填满，
+                // 使得后续的 get 操作路径更短
                 while (tab[h] != null)
                     h = nextIndex(h, len);
                 tab[h] = e;
             }
         }
     }
+    // 返回探测路径结束后的第一个空槽位索引
     return i;
 }
 ```
