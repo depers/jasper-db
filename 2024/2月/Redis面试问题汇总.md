@@ -1,6 +1,6 @@
-> Redis/面试
-
-> 整理一些关于Redis的面试问题
+| title             | tags       | background                    | auther | isSlow |
+| ----------------- | ---------- | ----------------------------- | ------ | ------ |
+| Redis面试问题汇总 | Redis/面试 | 整理一些关于Redis的面试问题。 | depers | true   |
 
 <div align=center><img src="../../assert/Redis_Logo.svg" align=center/></div>
 

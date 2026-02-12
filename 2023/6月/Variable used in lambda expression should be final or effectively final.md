@@ -1,6 +1,6 @@
-> Java
-
-> 这句话的意思是说Lambda 表达式只能引用标记了 final 的外层局部变量，也就是说不能在 Lambda 内部修改定义在域外的局部变量，否则会编译错误。
+| title                                                        | tags | background                                                   | auther | isSlow |
+| ------------------------------------------------------------ | ---- | ------------------------------------------------------------ | ------ | ------ |
+| Variable used in lambda expression should be final or effectively final | Java | 这句话的意思是说Lambda 表达式只能引用标记了 final 的外层局部变量，也就是说不能在 Lambda 内部修改定义在域外的局部变量，否则会编译错误。 | depers | true   |
 
 # 捕获 Lambda
 

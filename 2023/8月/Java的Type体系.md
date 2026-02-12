@@ -1,6 +1,6 @@
-> Java
-
-> 最近在开发过程中我想获取泛型参数的真实使用类型，遇到了ParameterizedType这个类，但是我发现在Java中ParameterizedType只是其中的一个泛型类型，Java开发了基于Type类型的泛型类型体系，下面通过这篇文章一起和我来学习一下吧。
+| title          | tags | background                                                   | auther | isSlow |
+| -------------- | ---- | ------------------------------------------------------------ | ------ | ------ |
+| Java的Type体系 | Java | 最近在开发过程中我想获取泛型参数的真实使用类型，遇到了ParameterizedType这个类，但是我发现在Java中ParameterizedType只是其中的一个泛型类型，Java开发了基于Type类型的泛型类型体系，下面通过这篇文章一起和我来学习一下吧。 | depers | true   |
 
 # Type接口的继承关系
 
